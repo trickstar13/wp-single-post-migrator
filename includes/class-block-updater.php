@@ -38,6 +38,10 @@ class IPBMFZ_Block_Updater {
         // Process blocks recursively
         $this->process_blocks($blocks, $image_map, $results);
 
+        // Process meta fields
+        $meta_updates = $this->process_meta_fields($post_id, $image_map, $results);
+        $results['updated_blocks'] += $meta_updates;
+
         // Validate blocks before saving
         $validation = $this->validate_blocks($blocks);
         if (!$validation['valid']) {
@@ -659,15 +663,21 @@ class IPBMFZ_Block_Updater {
         $has_updatable_images = false;
         foreach ($block['attrs'] as $attr_name => $attr_value) {
             if (is_string($attr_value) && $this->looks_like_json_image_data($attr_value)) {
+                $this->log('INFO', sprintf('Checking LazyBlock attribute %s for updatable images', $attr_name));
+
                 $decoded = urldecode($attr_value);
                 $data = json_decode($decoded, true);
-                if (json_last_error() === JSON_ERROR_NONE && isset($data['url'])) {
-                    $filename = basename(parse_url($data['url'], PHP_URL_PATH));
-                    $clean_filename = preg_replace('/-\d+x\d+(\.[^.]+)$/', '$1', $filename);
-                    if ($this->find_matching_attachment($clean_filename, $image_map)) {
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $found_images = $this->find_images_in_data($data, $image_map);
+                    if (!empty($found_images)) {
                         $has_updatable_images = true;
+                        $this->log('INFO', sprintf('Found %d updatable images in %s', count($found_images), $attr_name));
                         break;
+                    } else {
+                        $this->log('INFO', sprintf('No updatable images found in %s', $attr_name));
                     }
+                } else {
+                    $this->log('WARNING', sprintf('Failed to parse JSON in %s: %s', $attr_name, json_last_error_msg()));
                 }
             }
         }
@@ -748,10 +758,39 @@ class IPBMFZ_Block_Updater {
             return false;
         }
 
-        // Check for common image data keys
+        return $this->contains_image_data($data);
+    }
+
+    /**
+     * Recursively check if data contains image information
+     *
+     * @param mixed $data Data to check
+     * @return bool
+     */
+    private function contains_image_data($data) {
+        if (!is_array($data)) {
+            return false;
+        }
+
+        // Check for direct image data keys
         $image_keys = array('id', 'url', 'alt', 'title', 'sizes');
         foreach ($image_keys as $key) {
             if (isset($data[$key])) {
+                return true;
+            }
+        }
+
+        // Check for nested image data
+        foreach ($data as $key => $value) {
+            // Common nested image field names
+            if (in_array($key, array('itemImage', 'image', 'imageData'))) {
+                if (is_array($value) && $this->contains_image_data($value)) {
+                    return true;
+                }
+            }
+
+            // Recursively check arrays
+            if (is_array($value) && $this->contains_image_data($value)) {
                 return true;
             }
         }
@@ -792,53 +831,18 @@ class IPBMFZ_Block_Updater {
 
         $updated = false;
 
-        // Update main image data
-        if (isset($image_data['url'])) {
-            $filename = basename(parse_url($image_data['url'], PHP_URL_PATH));
-            $clean_filename = preg_replace('/-\d+x\d+(\.[^.]+)$/', '$1', $filename);
-
-            $matched_attachment_id = $this->find_matching_attachment($clean_filename, $image_map);
-
-            if ($matched_attachment_id) {
-                $new_url = wp_get_attachment_url($matched_attachment_id);
-
-                if ($new_url) {
-                    $this->log('INFO', sprintf(
-                        'Matched LazyBlock image: %s -> ID %d, URL %s',
-                        $filename,
-                        $matched_attachment_id,
-                        $new_url
-                    ));
-
-                    // Store original title and other text fields to preserve formatting
-                    $original_title = isset($image_data['title']) ? $image_data['title'] : '';
-
-                    // Update only the necessary fields
-                    $image_data['id'] = $matched_attachment_id;
-                    $image_data['url'] = $new_url;
-
-                    // Preserve original title (don't let WordPress modify it)
-                    if (!empty($original_title)) {
-                        $image_data['title'] = $original_title;
-                    }
-
-                    // Update sizes if they exist
-                    if (isset($image_data['sizes']) && is_array($image_data['sizes'])) {
-                        $this->update_lazyblock_image_sizes($image_data['sizes'], $matched_attachment_id);
-                    }
-
-                    $updated = true;
-                    $results['processed_images'][] = $filename;
-                }
-            }
-        }
+        // Use the same logic as meta field processing for consistency
+        $updated = $this->update_image_data_recursively($image_data, $image_map, $results);
 
         if ($updated) {
-            // Use the most conservative JSON encoding to preserve original formatting
-            $new_json = json_encode($image_data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            // Clean up any problematic HTML content in description fields
+            $this->clean_html_in_json_data($image_data);
+
+            // Use conservative JSON encoding flags
+            $new_json = json_encode($image_data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
 
             if ($new_json === false) {
-                $this->log('ERROR', 'JSON encoding failed for LazyBlock data');
+                $this->log('ERROR', 'JSON encoding failed for LazyBlock data: ' . json_last_error_msg());
                 return false;
             }
 
@@ -846,6 +850,7 @@ class IPBMFZ_Block_Updater {
             $validation_data = json_decode($new_json, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
                 $this->log('ERROR', 'JSON validation failed after encoding: ' . json_last_error_msg());
+                $this->log('ERROR', 'Problematic JSON snippet: ' . substr($new_json, 0, 500) . '...');
                 return false;
             }
 
@@ -862,12 +867,125 @@ class IPBMFZ_Block_Updater {
             $attr_value = urlencode($new_json);
 
             $this->log('INFO', sprintf(
-                'Updated LazyBlock attribute. Title preserved: %s',
+                'Updated LazyBlock attribute with safe JSON encoding. Title preserved: %s',
                 isset($image_data['title']) ? $image_data['title'] : 'N/A'
             ));
         }
 
         return $updated;
+    }
+
+    /**
+     * Update image data recursively (for both block attributes and meta fields)
+     *
+     * @param array $data Data to process (passed by reference)
+     * @param array $image_map Filename to attachment_id mapping
+     * @param array $results Results array (passed by reference)
+     * @return bool True if any updates were made
+     */
+    private function update_image_data_recursively(&$data, $image_map, &$results) {
+        if (!is_array($data)) {
+            return false;
+        }
+
+        $updated = false;
+
+        // Check if this is a direct image object
+        if (isset($data['url']) && isset($data['id'])) {
+            if ($this->update_single_image_data($data, $image_map, $results)) {
+                $updated = true;
+            }
+        }
+
+        // Process array elements recursively
+        foreach ($data as $key => &$value) {
+            if (is_array($value)) {
+                if ($this->update_image_data_recursively($value, $image_map, $results)) {
+                    $updated = true;
+                }
+            }
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Clean problematic HTML content in JSON data to prevent JSON encoding issues
+     *
+     * @param array $data Data to clean (passed by reference)
+     */
+    private function clean_html_in_json_data(&$data) {
+        if (!is_array($data)) {
+            return;
+        }
+
+        foreach ($data as $key => &$value) {
+            if (is_string($value)) {
+                // Clean up HTML content that might cause JSON issues
+                if (strpos($key, 'rendered') !== false || strpos($key, 'description') !== false) {
+                    // Remove or escape problematic characters in HTML
+                    $value = $this->sanitize_html_for_json($value);
+                }
+            } elseif (is_array($value)) {
+                // Recursively clean nested arrays
+                $this->clean_html_in_json_data($value);
+            }
+        }
+    }
+
+    /**
+     * Sanitize HTML content to be JSON-safe
+     *
+     * @param string $html HTML content
+     * @return string Sanitized HTML
+     */
+    private function sanitize_html_for_json($html) {
+        // Replace problematic characters that can break JSON
+        $html = str_replace(array("\r\n", "\r", "\n"), '', $html); // Remove line breaks
+        $html = str_replace(array('"'), '\"', $html); // Escape quotes
+        $html = str_replace(array("'"), "\'", $html); // Escape single quotes
+
+        // Remove any non-printable characters
+        $html = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $html);
+
+        return $html;
+    }
+
+    /**
+     * Find all images in data that have matching files in image_map
+     *
+     * @param array $data Data to search
+     * @param array $image_map Image map
+     * @return array Array of found image URLs
+     */
+    private function find_images_in_data($data, $image_map) {
+        $found_images = array();
+
+        if (!is_array($data)) {
+            return $found_images;
+        }
+
+        // Check if this is a direct image object
+        if (isset($data['url'])) {
+            $filename = basename(parse_url($data['url'], PHP_URL_PATH));
+            $clean_filename = preg_replace('/-\d+x\d+(\.[^.]+)$/', '$1', $filename);
+            if ($this->find_matching_attachment($clean_filename, $image_map)) {
+                $found_images[] = $data['url'];
+                $this->log('INFO', sprintf('Found matching image: %s -> %s', $filename, $clean_filename));
+            } else {
+                $this->log('INFO', sprintf('No match for image: %s (clean: %s)', $filename, $clean_filename));
+            }
+        }
+
+        // Search recursively
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $nested_images = $this->find_images_in_data($value, $image_map);
+                $found_images = array_merge($found_images, $nested_images);
+            }
+        }
+
+        return $found_images;
     }
 
     /**
@@ -1251,5 +1369,166 @@ class IPBMFZ_Block_Updater {
         }
 
         return $fixed_content;
+    }
+
+    /**
+     * Process post meta fields for image updates
+     *
+     * @param int $post_id Post ID
+     * @param array $image_map Filename to attachment_id mapping
+     * @param array $results Results array (passed by reference)
+     * @return int Number of updated meta fields
+     */
+    private function process_meta_fields($post_id, $image_map, &$results) {
+        $updated_count = 0;
+
+        // Get all post meta
+        $all_meta = get_post_meta($post_id);
+        if (empty($all_meta)) {
+            return $updated_count;
+        }
+
+        $this->log('INFO', sprintf('Processing %d meta fields for post %d', count($all_meta), $post_id));
+
+        // Process each meta field
+        foreach ($all_meta as $meta_key => $meta_values) {
+            // Skip WordPress internal fields and ACF field references
+            if (strpos($meta_key, '_') === 0) {
+                continue;
+            }
+
+            foreach ($meta_values as $meta_value) {
+                if (is_string($meta_value) && $this->looks_like_json_image_data($meta_value)) {
+                    $this->log('INFO', sprintf('Processing meta field: %s', $meta_key));
+
+                    // Store original value in case update fails
+                    $original_value = $meta_value;
+
+                    if ($this->update_meta_field_image_data($meta_value, $image_map, $results)) {
+                        // Update the meta field with new value
+                        update_post_meta($post_id, $meta_key, $meta_value);
+                        $updated_count++;
+                        $this->log('INFO', sprintf('Updated meta field: %s', $meta_key));
+                    } else {
+                        $this->log('WARNING', sprintf('Meta field update failed for: %s', $meta_key));
+                    }
+                }
+            }
+        }
+
+        if ($updated_count > 0) {
+            $this->log('INFO', sprintf('Updated %d meta fields', $updated_count));
+        }
+
+        return $updated_count;
+    }
+
+    /**
+     * Update image data in meta field value
+     *
+     * @param string $meta_value Meta field value (passed by reference)
+     * @param array $image_map Filename to attachment_id mapping
+     * @param array $results Results array (passed by reference)
+     * @return bool True if updated
+     */
+    private function update_meta_field_image_data(&$meta_value, $image_map, &$results) {
+        // Handle URL-encoded JSON
+        $decoded = urldecode($meta_value);
+        $data = json_decode($decoded, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            // Try direct JSON decode
+            $data = json_decode($meta_value, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return false;
+            }
+            $decoded = $meta_value;
+        }
+
+        if (!is_array($data)) {
+            return false;
+        }
+
+        // Use the same recursive logic as block attributes
+        $updated = $this->update_image_data_recursively($data, $image_map, $results);
+
+        if ($updated) {
+            // Clean up any problematic HTML content
+            $this->clean_html_in_json_data($data);
+
+            // Re-encode the data with safe JSON encoding
+            $new_json = json_encode($data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+
+            if ($new_json !== false) {
+                // Validate the JSON can be parsed back
+                $test_decode = json_decode($new_json, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    // If original was URL-encoded, re-encode it
+                    if ($decoded !== $meta_value) {
+                        $meta_value = urlencode($new_json);
+                    } else {
+                        $meta_value = $new_json;
+                    }
+                    return true;
+                } else {
+                    $this->log('ERROR', 'Meta field JSON validation failed: ' . json_last_error_msg());
+                }
+            } else {
+                $this->log('ERROR', 'Meta field JSON encoding failed: ' . json_last_error_msg());
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Update single image data object
+     *
+     * @param array $image_data Image data (passed by reference)
+     * @param array $image_map Filename to attachment_id mapping
+     * @param array $results Results array (passed by reference)
+     * @return bool True if updated
+     */
+    private function update_single_image_data(&$image_data, $image_map, &$results) {
+        if (!isset($image_data['url'])) {
+            return false;
+        }
+
+        $filename = basename(parse_url($image_data['url'], PHP_URL_PATH));
+        $clean_filename = preg_replace('/-\d+x\d+(\.[^.]+)$/', '$1', $filename);
+
+        $matched_attachment_id = $this->find_matching_attachment($clean_filename, $image_map);
+
+        if ($matched_attachment_id) {
+            $new_url = wp_get_attachment_url($matched_attachment_id);
+
+            if ($new_url) {
+                $this->log('INFO', sprintf(
+                    'Matched meta field image: %s -> ID %d, URL %s',
+                    $filename,
+                    $matched_attachment_id,
+                    $new_url
+                ));
+
+                // Update image data
+                $image_data['id'] = $matched_attachment_id;
+                $image_data['url'] = $new_url;
+
+                // Update sizes if they exist
+                if (isset($image_data['sizes']) && is_array($image_data['sizes'])) {
+                    $this->update_lazyblock_image_sizes($image_data['sizes'], $matched_attachment_id);
+                }
+
+                $results['processed_images'][] = $filename;
+                return true;
+            }
+        } else {
+            $results['failed_matches'][] = sprintf(
+                __('メタフィールドの画像がマッチしませんでした: %s', 'import-post-block-media-from-zip'),
+                $filename
+            );
+        }
+
+        return false;
     }
 }
