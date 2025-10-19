@@ -48,8 +48,8 @@ class IPBMFZ_Admin_UI
    */
   public function render_meta_box($post)
   {
-    // Only show for posts with valid ID (including drafts)
-    if (!$post->ID) {
+    // Only show for saved posts (excluding auto-drafts)
+    if (!$post->ID || $post->post_status === 'auto-draft') {
 ?>
       <p><?php _e('この機能は記事を保存した後に利用できます。', 'import-post-block-media-from-zip'); ?></p>
     <?php
@@ -401,8 +401,8 @@ class IPBMFZ_Admin_UI
 
     global $post;
 
-    // Only load for posts with valid ID (including drafts)
-    if (!$post || !$post->ID) {
+    // Only load for saved posts (excluding auto-drafts)
+    if (!$post || !$post->ID || $post->post_status === 'auto-draft') {
       return;
     }
 
