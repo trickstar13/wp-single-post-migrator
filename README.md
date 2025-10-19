@@ -1,4 +1,4 @@
-# WP Post Porter
+# WP Single Post Migrator
 
 WordPress記事を画像ファイルと共にZIP形式で完全にエクスポート・インポートできる包括的な移行ツール。
 
