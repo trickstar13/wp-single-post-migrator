@@ -83,15 +83,18 @@ WordPress記事ページ（投稿、固定ページ、カスタム投稿タイ�
 **処理フロー:**
 
 1. **記事データの収集**
+
    - 記事のメタデータ（タイトル、コンテンツ、投稿日時、ステータス等）を取得
    - オプションに応じてメタフィールド（ACF、カスタムフィールド）を収集
 
 2. **XML生成**
+
    - WordPress WXR（eXtended RSS）形式でXMLを生成
    - DOMDocumentを使用した安全なXML構築
    - メタフィールドデータの完全保持
 
 3. **画像収集**
+
    - ブロック内の画像URL解析（`core/image`, `core/gallery`, `lazyblock/*`）
    - メタフィールド内の画像データ解析（JSON形式、ネストした構造も対応）
    - 画像ファイルの物理的コピー
@@ -144,15 +147,18 @@ export-{post-title}-{post-id}-{timestamp}.zip
 **処理フロー:**
 
 1. **ZIPファイルの展開**
+
    - 一時ディレクトリへの展開: `wp-content/uploads/temp-import-{timestamp}/`
    - XMLファイルとimagesディレクトリの検出
 
 2. **XML解析**
+
    - WXR形式およびシンプルXML形式の自動判定
    - 記事データとメタフィールドデータの抽出
    - データサニタイゼーション（XSS対策、SQLインジェクション対策）
 
 3. **記事の置き換え更新**
+
    - 記事置き換えモード: `wp_update_post()` で既存記事を更新
    - メタフィールドの復元: `update_post_meta()` で各フィールドを設定
 
@@ -407,8 +413,8 @@ LazyBlocksやメタフィールドのJSON形式を処理する際、以下の安
 ### 3.1 ファイル構造
 
 ```
-import-post-block-media-from-zip/
-├── import-post-block-media-from-zip.php  # メインファイル
+wp-single-post-migrator/
+├── wp-single-post-migrator.php  # メインファイル
 ├── includes/
 │   ├── class-zip-handler.php             # ZIP処理クラス（共通）
 │   ├── class-media-importer.php          # メディアインポートクラス（共通）

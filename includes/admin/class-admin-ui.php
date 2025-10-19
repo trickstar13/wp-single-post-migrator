@@ -32,7 +32,7 @@ class IPBMFZ_Admin_UI
     foreach ($post_types as $post_type) {
       add_meta_box(
         'import-export-media-zip',
-        __('Import/Export Post with Media', 'import-post-block-media-from-zip'),
+        __('Import/Export Post with Media', 'wp-single-post-migrator'),
         array($this, 'render_meta_box'),
         $post_type,
         'side',
@@ -51,7 +51,7 @@ class IPBMFZ_Admin_UI
     // Only show for saved posts (excluding auto-drafts)
     if (!$post->ID || $post->post_status === 'auto-draft') {
 ?>
-      <p><?php _e('この機能は記事を保存した後に利用できます。', 'import-post-block-media-from-zip'); ?></p>
+      <p><?php _e('この機能は記事を保存した後に利用できます。', 'wp-single-post-migrator'); ?></p>
     <?php
       return;
     }
@@ -59,7 +59,7 @@ class IPBMFZ_Admin_UI
     // Check user permissions
     if (!current_user_can('edit_post', $post->ID)) {
     ?>
-      <p><?php _e('この記事を編集する権限がありません。', 'import-post-block-media-from-zip'); ?></p>
+      <p><?php _e('この記事を編集する権限がありません。', 'wp-single-post-migrator'); ?></p>
     <?php
       return;
     }
@@ -70,17 +70,17 @@ class IPBMFZ_Admin_UI
     <div id="import-export-container">
       <!-- Export Section -->
       <div id="export-section" class="function-section">
-        <h4><?php _e('エクスポート', 'import-post-block-media-from-zip'); ?></h4>
-        <p><?php _e('この記事をXMLと画像ファイルを含むZIPファイルとしてエクスポートします。', 'import-post-block-media-from-zip'); ?></p>
+        <h4><?php _e('エクスポート', 'wp-single-post-migrator'); ?></h4>
+        <p><?php _e('この記事をXMLと画像ファイルを含むZIPファイルとしてエクスポートします。', 'wp-single-post-migrator'); ?></p>
 
         <div class="export-options">
           <label>
             <input type="checkbox" id="export-include-images" checked>
-            <?php _e('画像ファイルを含める', 'import-post-block-media-from-zip'); ?>
+            <?php _e('画像ファイルを含める', 'wp-single-post-migrator'); ?>
           </label>
           <label>
             <input type="checkbox" id="export-include-meta" checked>
-            <?php _e('メタフィールドを含める', 'import-post-block-media-from-zip'); ?>
+            <?php _e('メタフィールドを含める', 'wp-single-post-migrator'); ?>
           </label>
         </div>
 
@@ -90,7 +90,7 @@ class IPBMFZ_Admin_UI
             id="export-post-button"
             class="button button-secondary"
             data-post-id="<?php echo esc_attr($post->ID); ?>">
-            <?php _e('記事をエクスポート', 'import-post-block-media-from-zip'); ?>
+            <?php _e('記事をエクスポート', 'wp-single-post-migrator'); ?>
           </button>
         </p>
 
@@ -98,26 +98,26 @@ class IPBMFZ_Admin_UI
           <div class="progress-bar-container">
             <div class="progress-bar" id="export-progress-bar"></div>
           </div>
-          <p id="export-progress-message"><?php _e('エクスポート中...', 'import-post-block-media-from-zip'); ?></p>
+          <p id="export-progress-message"><?php _e('エクスポート中...', 'wp-single-post-migrator'); ?></p>
         </div>
       </div>
 
       <!-- Import Section -->
       <div id="import-section" class="function-section">
-        <h4><?php _e('インポート', 'import-post-block-media-from-zip'); ?></h4>
-        <p><?php _e('XMLと画像を含むZIPファイルから記事をインポートします。', 'import-post-block-media-from-zip'); ?></p>
+        <h4><?php _e('インポート', 'wp-single-post-migrator'); ?></h4>
+        <p><?php _e('XMLと画像を含むZIPファイルから記事をインポートします。', 'wp-single-post-migrator'); ?></p>
 
         <div class="import-options">
           <p>
-            <strong><?php _e('現在の記事を置き換えてインポートします', 'import-post-block-media-from-zip'); ?></strong>
+            <strong><?php _e('現在の記事を置き換えてインポートします', 'wp-single-post-migrator'); ?></strong>
           </p>
           <label>
             <input type="checkbox" id="import-include-images" checked>
-            <?php _e('画像ファイルをインポート', 'import-post-block-media-from-zip'); ?>
+            <?php _e('画像ファイルをインポート', 'wp-single-post-migrator'); ?>
           </label>
           <label>
             <input type="checkbox" id="import-include-meta" checked>
-            <?php _e('メタフィールドをインポート', 'import-post-block-media-from-zip'); ?>
+            <?php _e('メタフィールドをインポート', 'wp-single-post-migrator'); ?>
           </label>
         </div>
 
@@ -135,15 +135,15 @@ class IPBMFZ_Admin_UI
             class="button button-primary"
             disabled
             data-post-id="<?php echo esc_attr($post->ID); ?>">
-            <?php _e('記事をインポート', 'import-post-block-media-from-zip'); ?>
+            <?php _e('記事をインポート', 'wp-single-post-migrator'); ?>
           </button>
         </p>
       </div>
 
       <!-- Image Only Import Section -->
       <div id="image-import-section" class="function-section">
-        <h4><?php _e('画像のみインポート', 'import-post-block-media-from-zip'); ?></h4>
-        <p><?php _e('画像ファイルのみを含むZIPファイルから画像をインポートし、現在の記事内のブロックを更新します。', 'import-post-block-media-from-zip'); ?></p>
+        <h4><?php _e('画像のみインポート', 'wp-single-post-migrator'); ?></h4>
+        <p><?php _e('画像ファイルのみを含むZIPファイルから画像をインポートし、現在の記事内のブロックを更新します。', 'wp-single-post-migrator'); ?></p>
 
         <p>
           <input
@@ -159,7 +159,7 @@ class IPBMFZ_Admin_UI
             class="button button-secondary"
             disabled
             data-post-id="<?php echo esc_attr($post->ID); ?>">
-            <?php _e('画像のみインポート', 'import-post-block-media-from-zip'); ?>
+            <?php _e('画像のみインポート', 'wp-single-post-migrator'); ?>
           </button>
         </p>
       </div>
@@ -169,49 +169,49 @@ class IPBMFZ_Admin_UI
         <div class="progress-bar-container">
           <div class="progress-bar" id="progress-bar"></div>
         </div>
-        <p id="progress-message"><?php _e('処理中...', 'import-post-block-media-from-zip'); ?></p>
+        <p id="progress-message"><?php _e('処理中...', 'wp-single-post-migrator'); ?></p>
       </div>
 
       <!-- Results Section -->
       <div id="operation-results" style="display: none;">
-        <h4 id="results-title"><?php _e('操作結果', 'import-post-block-media-from-zip'); ?></h4>
+        <h4 id="results-title"><?php _e('操作結果', 'wp-single-post-migrator'); ?></h4>
         <div id="results-content"></div>
         <p>
           <button type="button" id="perform-another" class="button">
-            <?php _e('別の操作を実行', 'import-post-block-media-from-zip'); ?>
+            <?php _e('別の操作を実行', 'wp-single-post-migrator'); ?>
           </button>
         </p>
       </div>
     </div>
 
     <div class="plugin-info">
-      <h4><?php _e('機能説明', 'import-post-block-media-from-zip'); ?></h4>
+      <h4><?php _e('機能説明', 'wp-single-post-migrator'); ?></h4>
       <div class="info-tabs">
         <div class="info-tab">
-          <h5><?php _e('エクスポート機能', 'import-post-block-media-from-zip'); ?></h5>
+          <h5><?php _e('エクスポート機能', 'wp-single-post-migrator'); ?></h5>
           <ul>
-            <li><?php _e('記事データをXML形式でエクスポート', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('関連画像ファイルも一括エクスポート', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('メタフィールド（ACF等）も含めて出力', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('ZIPファイルとしてダウンロード', 'import-post-block-media-from-zip'); ?></li>
+            <li><?php _e('記事データをXML形式でエクスポート', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('関連画像ファイルも一括エクスポート', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('メタフィールド（ACF等）も含めて出力', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('ZIPファイルとしてダウンロード', 'wp-single-post-migrator'); ?></li>
           </ul>
         </div>
         <div class="info-tab">
-          <h5><?php _e('インポート機能', 'import-post-block-media-from-zip'); ?></h5>
+          <h5><?php _e('インポート機能', 'wp-single-post-migrator'); ?></h5>
           <ul>
-            <li><?php _e('XMLファイルから記事データを復元', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('画像ファイルも自動的にインポート', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('新規作成または既存記事の置き換え', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('ブロック内の画像URLを自動更新', 'import-post-block-media-from-zip'); ?></li>
+            <li><?php _e('XMLファイルから記事データを復元', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('画像ファイルも自動的にインポート', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('新規作成または既存記事の置き換え', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('ブロック内の画像URLを自動更新', 'wp-single-post-migrator'); ?></li>
           </ul>
         </div>
         <div class="info-tab">
-          <h5><?php _e('画像のみインポート', 'import-post-block-media-from-zip'); ?></h5>
+          <h5><?php _e('画像のみインポート', 'wp-single-post-migrator'); ?></h5>
           <ul>
-            <li><?php _e('対応形式: JPG, PNG, GIF, WebP, SVG', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('ZIPファイル内のサブフォルダも対応', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('ファイル名が一致する画像ブロックを自動更新', 'import-post-block-media-from-zip'); ?></li>
-            <li><?php _e('推奨: 10MB以下のZIPファイル', 'import-post-block-media-from-zip'); ?></li>
+            <li><?php _e('対応形式: JPG, PNG, GIF, WebP, SVG', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('ZIPファイル内のサブフォルダも対応', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('ファイル名が一致する画像ブロックを自動更新', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('推奨: 10MB以下のZIPファイル', 'wp-single-post-migrator'); ?></li>
           </ul>
         </div>
       </div>
@@ -432,30 +432,30 @@ class IPBMFZ_Admin_UI
       'nonce' => wp_create_nonce('import_media_from_zip_nonce'),
       'postId' => $post->ID,
       'strings' => array(
-        'selectFile' => __('ZIPファイルを選択してください', 'import-post-block-media-from-zip'),
-        'uploading' => __('アップロード中...', 'import-post-block-media-from-zip'),
-        'processing' => __('処理中...', 'import-post-block-media-from-zip'),
-        'exporting' => __('エクスポート中...', 'import-post-block-media-from-zip'),
-        'importing' => __('インポート中...', 'import-post-block-media-from-zip'),
-        'completed' => __('完了しました', 'import-post-block-media-from-zip'),
-        'error' => __('エラーが発生しました', 'import-post-block-media-from-zip'),
-        'success' => __('成功', 'import-post-block-media-from-zip'),
-        'warning' => __('警告', 'import-post-block-media-from-zip'),
-        'noFile' => __('ファイルが選択されていません', 'import-post-block-media-from-zip'),
-        'invalidFile' => __('ZIPファイルを選択してください', 'import-post-block-media-from-zip'),
-        'exportSuccess' => __('エクスポートが完了しました', 'import-post-block-media-from-zip'),
-        'importSuccess' => __('インポートが完了しました', 'import-post-block-media-from-zip'),
-        'importedImages' => __('インポートされた画像数', 'import-post-block-media-from-zip'),
-        'updatedBlocks' => __('更新されたブロック数', 'import-post-block-media-from-zip'),
-        'failedMatches' => __('マッチングに失敗した画像', 'import-post-block-media-from-zip'),
-        'exportedImages' => __('エクスポートされた画像数', 'import-post-block-media-from-zip'),
-        'fileSize' => __('ファイルサイズ', 'import-post-block-media-from-zip'),
-        'downloadFile' => __('ファイルをダウンロード', 'import-post-block-media-from-zip'),
-        'updatedPost' => __('記事が更新されました', 'import-post-block-media-from-zip'),
-        'confirmReplace' => __('現在の記事内容を置き換えてもよろしいですか？この操作は元に戻せません。', 'import-post-block-media-from-zip'),
-        'reloadPage' => __('ページをリロードして変更を確認しますか？', 'import-post-block-media-from-zip'),
-        'viewPost' => __('記事を表示', 'import-post-block-media-from-zip'),
-        'editPost' => __('記事を編集', 'import-post-block-media-from-zip')
+        'selectFile' => __('ZIPファイルを選択してください', 'wp-single-post-migrator'),
+        'uploading' => __('アップロード中...', 'wp-single-post-migrator'),
+        'processing' => __('処理中...', 'wp-single-post-migrator'),
+        'exporting' => __('エクスポート中...', 'wp-single-post-migrator'),
+        'importing' => __('インポート中...', 'wp-single-post-migrator'),
+        'completed' => __('完了しました', 'wp-single-post-migrator'),
+        'error' => __('エラーが発生しました', 'wp-single-post-migrator'),
+        'success' => __('成功', 'wp-single-post-migrator'),
+        'warning' => __('警告', 'wp-single-post-migrator'),
+        'noFile' => __('ファイルが選択されていません', 'wp-single-post-migrator'),
+        'invalidFile' => __('ZIPファイルを選択してください', 'wp-single-post-migrator'),
+        'exportSuccess' => __('エクスポートが完了しました', 'wp-single-post-migrator'),
+        'importSuccess' => __('インポートが完了しました', 'wp-single-post-migrator'),
+        'importedImages' => __('インポートされた画像数', 'wp-single-post-migrator'),
+        'updatedBlocks' => __('更新されたブロック数', 'wp-single-post-migrator'),
+        'failedMatches' => __('マッチングに失敗した画像', 'wp-single-post-migrator'),
+        'exportedImages' => __('エクスポートされた画像数', 'wp-single-post-migrator'),
+        'fileSize' => __('ファイルサイズ', 'wp-single-post-migrator'),
+        'downloadFile' => __('ファイルをダウンロード', 'wp-single-post-migrator'),
+        'updatedPost' => __('記事が更新されました', 'wp-single-post-migrator'),
+        'confirmReplace' => __('現在の記事内容を置き換えてもよろしいですか？この操作は元に戻せません。', 'wp-single-post-migrator'),
+        'reloadPage' => __('ページをリロードして変更を確認しますか？', 'wp-single-post-migrator'),
+        'viewPost' => __('記事を表示', 'wp-single-post-migrator'),
+        'editPost' => __('記事を編集', 'wp-single-post-migrator')
       )
     ));
   }
@@ -468,7 +468,7 @@ class IPBMFZ_Admin_UI
     if (isset($_GET['import_success']) && $_GET['import_success'] === '1') {
     ?>
       <div class="notice notice-success is-dismissible">
-        <p><?php _e('画像のインポートが完了しました。', 'import-post-block-media-from-zip'); ?></p>
+        <p><?php _e('画像のインポートが完了しました。', 'wp-single-post-migrator'); ?></p>
       </div>
     <?php
     }
@@ -541,7 +541,7 @@ class IPBMFZ_Admin_UI
 
     $screen->add_help_tab(array(
       'id' => 'import-media-from-zip-help',
-      'title' => __('Import Media from ZIP', 'import-post-block-media-from-zip'),
+      'title' => __('Import Media from ZIP', 'wp-single-post-migrator'),
       'content' => $this->get_help_content()
     ));
   }
@@ -555,17 +555,17 @@ class IPBMFZ_Admin_UI
   {
     ob_start();
     ?>
-    <h3><?php _e('Import Media from ZIP の使用方法', 'import-post-block-media-from-zip'); ?></h3>
+    <h3><?php _e('Import Media from ZIP の使用方法', 'wp-single-post-migrator'); ?></h3>
 
-    <h4><?php _e('基本的な使い方', 'import-post-block-media-from-zip'); ?></h4>
+    <h4><?php _e('基本的な使い方', 'wp-single-post-migrator'); ?></h4>
     <ol>
-      <li><?php _e('記事を保存してから機能を使用してください', 'import-post-block-media-from-zip'); ?></li>
-      <li><?php _e('サイドバーの「Import Media from ZIP」セクションでZIPファイルを選択', 'import-post-block-media-from-zip'); ?></li>
-      <li><?php _e('「画像をインポート」ボタンをクリック', 'import-post-block-media-from-zip'); ?></li>
-      <li><?php _e('処理完了後、ページをリロードして確認', 'import-post-block-media-from-zip'); ?></li>
+      <li><?php _e('記事を保存してから機能を使用してください', 'wp-single-post-migrator'); ?></li>
+      <li><?php _e('サイドバーの「Import Media from ZIP」セクションでZIPファイルを選択', 'wp-single-post-migrator'); ?></li>
+      <li><?php _e('「画像をインポート」ボタンをクリック', 'wp-single-post-migrator'); ?></li>
+      <li><?php _e('処理完了後、ページをリロードして確認', 'wp-single-post-migrator'); ?></li>
     </ol>
 
-    <h4><?php _e('対応ファイル形式', 'import-post-block-media-from-zip'); ?></h4>
+    <h4><?php _e('対応ファイル形式', 'wp-single-post-migrator'); ?></h4>
     <ul>
       <li>JPG/JPEG</li>
       <li>PNG</li>
@@ -574,12 +574,12 @@ class IPBMFZ_Admin_UI
       <li>SVG</li>
     </ul>
 
-    <h4><?php _e('注意事項', 'import-post-block-media-from-zip'); ?></h4>
+    <h4><?php _e('注意事項', 'wp-single-post-migrator'); ?></h4>
     <ul>
-      <li><?php _e('ファイル名が一致する画像ブロックのみ自動更新されます', 'import-post-block-media-from-zip'); ?></li>
-      <li><?php _e('同名ファイルが既に存在する場合は自動的にリネームされます', 'import-post-block-media-from-zip'); ?></li>
-      <li><?php _e('ZIPファイルは処理後に自動削除されます', 'import-post-block-media-from-zip'); ?></li>
-      <li><?php _e('推奨ZIPファイルサイズ: 10MB以下', 'import-post-block-media-from-zip'); ?></li>
+      <li><?php _e('ファイル名が一致する画像ブロックのみ自動更新されます', 'wp-single-post-migrator'); ?></li>
+      <li><?php _e('同名ファイルが既に存在する場合は自動的にリネームされます', 'wp-single-post-migrator'); ?></li>
+      <li><?php _e('ZIPファイルは処理後に自動削除されます', 'wp-single-post-migrator'); ?></li>
+      <li><?php _e('推奨ZIPファイルサイズ: 10MB以下', 'wp-single-post-migrator'); ?></li>
     </ul>
 <?php
     return ob_get_clean();

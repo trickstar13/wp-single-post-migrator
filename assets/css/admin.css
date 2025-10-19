@@ -1,382 +1,384 @@
 /**
- * Admin CSS for Import Post Block Media from ZIP
+ * Admin CSS for WP Single Post Migrator
  */
 
 /* Meta Box Styling */
 #import-media-container {
-    position: relative;
+  position: relative;
 }
 
 #import-media-upload-area {
-    padding: 15px;
-    background: #fafafa;
-    border: 2px dashed #ccc;
-    border-radius: 5px;
-    text-align: center;
-    transition: all 0.3s ease;
+  padding: 15px;
+  background: #fafafa;
+  border: 2px dashed #ccc;
+  border-radius: 5px;
+  text-align: center;
+  transition: all 0.3s ease;
 }
 
 #import-media-upload-area.drag-over {
-    border-color: #0073aa;
-    background: #f0f8ff;
+  border-color: #0073aa;
+  background: #f0f8ff;
 }
 
 #import-media-upload-area label {
-    font-weight: 600;
-    margin-bottom: 10px;
-    display: block;
+  font-weight: 600;
+  margin-bottom: 10px;
+  display: block;
 }
 
 #zip-file-input {
-    margin: 10px 0;
-    width: 100% !important;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 3px;
+  margin: 10px 0;
+  width: 100% !important;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
 }
 
 #import-media-button {
-    margin-top: 10px;
-    min-width: 120px;
+  margin-top: 10px;
+  min-width: 120px;
 }
 
 #import-media-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Progress Indicator */
 #import-progress {
-    padding: 20px 15px;
-    text-align: center;
+  padding: 20px 15px;
+  text-align: center;
 }
 
 .progress-bar-container {
-    width: 100%;
-    height: 24px;
-    background-color: #f1f1f1;
-    border-radius: 4px;
-    overflow: hidden;
-    margin: 15px 0;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  height: 24px;
+  background-color: #f1f1f1;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 15px 0;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .progress-bar {
-    height: 100%;
-    background: linear-gradient(90deg, #0073aa 0%, #005a87 100%);
-    width: 0%;
-    transition: width 0.3s ease;
-    position: relative;
+  height: 100%;
+  background: linear-gradient(90deg, #0073aa 0%, #005a87 100%);
+  width: 0%;
+  transition: width 0.3s ease;
+  position: relative;
 }
 
 .progress-bar::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    right: 0;
-    background-image: linear-gradient(
-        -45deg,
-        rgba(255, 255, 255, 0.2) 25%,
-        transparent 25%,
-        transparent 50%,
-        rgba(255, 255, 255, 0.2) 50%,
-        rgba(255, 255, 255, 0.2) 75%,
-        transparent 75%,
-        transparent
-    );
-    background-size: 20px 20px;
-    animation: progressAnimation 1s linear infinite;
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background-image: linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.2) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.2) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 20px 20px;
+  animation: progressAnimation 1s linear infinite;
 }
 
 @keyframes progressAnimation {
-    0% {
-        background-position: 0 0;
-    }
-    100% {
-        background-position: 20px 0;
-    }
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 20px 0;
+  }
 }
 
 #progress-message {
-    margin: 10px 0 0 0;
-    font-weight: 600;
-    color: #555;
+  margin: 10px 0 0 0;
+  font-weight: 600;
+  color: #555;
 }
 
 /* Results Display */
 #import-results {
-    margin-top: 15px;
+  margin-top: 15px;
 }
 
 #import-results h4 {
-    margin: 0 0 15px 0;
-    padding: 0;
-    font-size: 14px;
-    color: #333;
+  margin: 0 0 15px 0;
+  padding: 0;
+  font-size: 14px;
+  color: #333;
 }
 
 #results-content {
-    background: #fff;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 15px;
-    margin-bottom: 15px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 15px;
 }
 
 .results-stats {
-    margin-bottom: 20px;
+  margin-bottom: 20px;
 }
 
 .results-stats strong {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
 }
 
 .results-stats ul {
-    margin: 8px 0 0 20px;
-    font-size: 12px;
+  margin: 8px 0 0 20px;
+  font-size: 12px;
 }
 
 .results-stats li {
-    margin-bottom: 4px;
+  margin-bottom: 4px;
 }
 
 /* Result Status Colors */
 .result-success {
-    color: #46b450;
+  color: #46b450;
 }
 
 .result-success strong {
-    color: #46b450;
+  color: #46b450;
 }
 
 .result-warning {
-    color: #ffb900;
+  color: #ffb900;
 }
 
 .result-warning strong {
-    color: #ffb900;
+  color: #ffb900;
 }
 
 .result-error {
-    color: #dc3232;
+  color: #dc3232;
 }
 
 .result-error strong {
-    color: #dc3232;
+  color: #dc3232;
 }
 
 /* Failed Matches Section */
 .failed-matches {
-    margin-top: 15px;
-    padding-top: 15px;
-    border-top: 1px solid #eee;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
 }
 
 .failed-matches ul {
-    margin: 8px 0 0 20px;
-    font-size: 12px;
+  margin: 8px 0 0 20px;
+  font-size: 12px;
 }
 
 .failed-matches li {
-    margin-bottom: 5px;
-    line-height: 1.4;
+  margin-bottom: 5px;
+  line-height: 1.4;
 }
 
 /* Import Errors Section */
 .import-errors {
-    margin-top: 15px;
-    padding-top: 15px;
-    border-top: 1px solid #eee;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
 }
 
 .import-errors ul {
-    margin: 8px 0 0 20px;
-    font-size: 12px;
+  margin: 8px 0 0 20px;
+  font-size: 12px;
 }
 
 .import-errors li {
-    margin-bottom: 5px;
-    line-height: 1.4;
+  margin-bottom: 5px;
+  line-height: 1.4;
 }
 
 /* Another Import Button */
 #import-another {
-    margin-top: 10px;
+  margin-top: 10px;
 }
 
 /* Info Section */
 .import-info {
-    margin-top: 20px;
-    padding-top: 15px;
-    border-top: 1px solid #ddd;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #ddd;
 }
 
 .import-info h4 {
-    margin: 0 0 10px 0;
-    font-size: 13px;
-    color: #666;
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #666;
 }
 
 .import-info ul {
-    font-size: 12px;
-    margin-left: 20px;
-    color: #666;
+  font-size: 12px;
+  margin-left: 20px;
+  color: #666;
 }
 
 .import-info li {
-    margin-bottom: 6px;
-    line-height: 1.4;
+  margin-bottom: 6px;
+  line-height: 1.4;
 }
 
 /* Notices */
 .import-notice {
-    margin: 15px 0;
-    position: relative;
+  margin: 15px 0;
+  position: relative;
 }
 
 .import-notice p {
-    margin: 8px 0;
-    font-size: 13px;
+  margin: 8px 0;
+  font-size: 13px;
 }
 
 /* Responsive Design */
 @media (max-width: 782px) {
-    #import-media-upload-area {
-        padding: 12px;
-    }
+  #import-media-upload-area {
+    padding: 12px;
+  }
 
-    #zip-file-input {
-        font-size: 16px; /* Prevent zoom on iOS */
-    }
+  #zip-file-input {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
 
-    .progress-bar-container {
-        height: 20px;
-    }
+  .progress-bar-container {
+    height: 20px;
+  }
 
-    #results-content {
-        padding: 12px;
-    }
+  #results-content {
+    padding: 12px;
+  }
 
-    .results-stats,
-    .failed-matches,
-    .import-errors {
-        font-size: 11px;
-    }
+  .results-stats,
+  .failed-matches,
+  .import-errors {
+    font-size: 11px;
+  }
 
-    .import-info {
-        font-size: 11px;
-    }
+  .import-info {
+    font-size: 11px;
+  }
 }
 
 /* High DPI Displays */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-    .progress-bar-container {
-        box-shadow: inset 0 0.5px 1.5px rgba(0, 0, 0, 0.1);
-    }
+  .progress-bar-container {
+    box-shadow: inset 0 0.5px 1.5px rgba(0, 0, 0, 0.1);
+  }
 }
 
 /* Dark Mode Support (if admin color scheme is dark) */
 .admin-color-midnight #import-media-upload-area,
 .admin-color-blue #import-media-upload-area {
-    background: #32373c;
-    border-color: #555;
-    color: #eee;
+  background: #32373c;
+  border-color: #555;
+  color: #eee;
 }
 
 .admin-color-midnight #import-media-upload-area.drag-over,
 .admin-color-blue #import-media-upload-area.drag-over {
-    border-color: #0073aa;
-    background: #1e2327;
+  border-color: #0073aa;
+  background: #1e2327;
 }
 
 .admin-color-midnight #results-content,
 .admin-color-blue #results-content {
-    background: #32373c;
-    border-color: #555;
-    color: #eee;
+  background: #32373c;
+  border-color: #555;
+  color: #eee;
 }
 
 .admin-color-midnight .import-info,
 .admin-color-blue .import-info {
-    border-color: #555;
+  border-color: #555;
 }
 
 .admin-color-midnight .import-info h4,
 .admin-color-midnight .import-info ul,
 .admin-color-blue .import-info h4,
 .admin-color-blue .import-info ul {
-    color: #ccc;
+  color: #ccc;
 }
 
 /* Focus States for Accessibility */
 #zip-file-input:focus {
-    outline: 2px solid #0073aa;
-    outline-offset: 2px;
+  outline: 2px solid #0073aa;
+  outline-offset: 2px;
 }
 
 #import-media-button:focus {
-    box-shadow: 0 0 0 2px #0073aa;
+  box-shadow: 0 0 0 2px #0073aa;
 }
 
 #import-another:focus {
-    box-shadow: 0 0 0 2px #0073aa;
+  box-shadow: 0 0 0 2px #0073aa;
 }
 
 /* Loading State */
 .import-loading {
-    pointer-events: none;
-    opacity: 0.7;
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 .import-loading::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.8);
-    z-index: 10;
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  z-index: 10;
 }
 
 /* Animation for smooth transitions */
 #import-media-container > div {
-    transition: opacity 0.3s ease, transform 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 #import-media-container > div:not(:target) {
-    opacity: 1;
-    transform: translateY(0);
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Success/Error States */
 .import-success #import-results {
-    border-left: 4px solid #46b450;
+  border-left: 4px solid #46b450;
 }
 
 .import-error #import-results {
-    border-left: 4px solid #dc3232;
+  border-left: 4px solid #dc3232;
 }
 
 .import-warning #import-results {
-    border-left: 4px solid #ffb900;
+  border-left: 4px solid #ffb900;
 }
 
 /* Hover Effects */
 #import-media-upload-area:hover {
-    border-color: #999;
+  border-color: #999;
 }
 
 #import-media-button:hover:not(:disabled) {
-    background-color: #005a87;
-    border-color: #005a87;
+  background-color: #005a87;
+  border-color: #005a87;
 }
 
 #import-another:hover {
-    background-color: #f1f1f1;
-    border-color: #999;
+  background-color: #f1f1f1;
+  border-color: #999;
 }

@@ -57,7 +57,7 @@ WordPress記事を画像ファイルと共にZIP形式で完全にエクスポ�
 
 ## インストール
 
-1. プラグインファイルを `/wp-content/plugins/import-post-block-media-from-zip/` ディレクトリにアップロード
+1. プラグインファイルを `/wp-content/plugins/wp-single-post-migrator/` ディレクトリにアップロード
 2. WordPress管理画面でプラグインを有効化
 3. 記事編集画面のサイドバーに「Import/Export Post with Media」メタボックスが表示されます
 
