@@ -1,14 +1,20 @@
-# WordPress プラグイン「Import Post Block Media from ZIP」仕様書
+# WordPress プラグイン「Import/Export Post Block Media from ZIP」仕様書
 
 ## 1. プラグイン概要
 
 ### 1.1 プラグイン名
 
-**Import Post Block Media from ZIP**
+**Import/Export Post Block Media from ZIP**
 
 ### 1.2 目的
 
-WordPress記事ページ（投稿、固定ページ、カスタム投稿タイプ）に対して、ZIP形式でまとめられた画像ファイルを一括アップロードし、記事内のブロックエディタコンテンツと自動的に紐付けることで、ローカル環境からステージング環境への記事移行を効率化する。
+WordPress記事ページ（投稿、固定ページ、カスタム投稿タイプ）に対して、以下の包括的な移行機能を提供する：
+
+1. **エクスポート機能**: 記事データをXML形式でエクスポートし、関連画像と共にZIPファイル化
+2. **インポート機能**: XMLと画像データを含むZIPファイルから完全な記事を復元
+3. **画像のみインポート機能**: ZIP形式でまとめられた画像ファイルを一括アップロードし、既存記事のブロックエディタコンテンツと自動紐付け
+
+これらの機能により、ローカル環境からステージング環境への記事移行、サイト間のコンテンツ移植、バックアップ・復元を効率化する。
 
 ### 1.3 動作環境
 
@@ -22,34 +28,151 @@ WordPress記事ページ（投稿、固定ページ、カスタム投稿タイ�
 
 ### 2.1 UI要素
 
-#### 2.1.1 「Import Media from ZIP」ボタン
+#### 2.1.1 統合メタボックス「Import/Export Post with Media」
 
 - **配置場所**: 記事編集画面（ブロックエディタ）のサイドバー内
 - **表示条件**:
   - 投稿タイプが `post`, `page`, またはカスタム投稿タイプ
   - 既存の記事（下書き・公開済み問わず）
-  - 新規記事では非表示（post_id が必要）
-- **デザイン**: WordPressの標準ボタンスタイルに準拠
+  - 新規記事では機能制限表示（post_id が必要な機能は無効化）
+- **構成**: 3つの機能セクションに分割
 
-#### 2.1.2 ZIPファイル選択ダイアログ
+#### 2.1.2 エクスポートセクション
 
-- **トリガー**: 「Import Media from ZIP」ボタンクリック時
+- **「記事をエクスポート」ボタン**: 現在の記事をZIPファイルとしてエクスポート
+- **オプション選択**:
+  - ☑ 画像ファイルを含める（デフォルト: ON）
+  - ☑ メタフィールドを含める（デフォルト: ON）
+- **処理中表示**: 進行状況バーと「エクスポート中...」メッセージ
+- **完了表示**: ダウンロードリンクと統計情報
+
+#### 2.1.3 インポートセクション
+
+- **ZIPファイル選択**: ドラッグ&ドロップまたはファイル選択ダイアログ
+- **記事置き換えモード**: 現在の記事内容を新しいデータで置き換え（確認ダイアログ付き）
+- **オプション選択**:
+  - ☑ 画像ファイルをインポート（デフォルト: ON）
+  - ☑ メタフィールドをインポート（デフォルト: ON）
+- **「記事をインポート」ボタン**: 選択されたZIPファイルからインポート実行
+
+#### 2.1.4 画像のみインポートセクション（従来機能）
+
+- **ZIPファイル選択**: 画像のみを含むZIPファイル
+- **「画像のみインポート」ボタン**: 既存記事のブロック更新のみ実行
+- **従来機能の継承**: 後方互換性のため独立セクションとして維持
+
+#### 2.1.5 共通UI要素
+
 - **ファイル形式制限**: `.zip` のみ受付
 - **ファイルサイズ制限**: PHPの `upload_max_filesize` に準拠（推奨: 10MB以下を警告表示）
-
-#### 2.1.3 処理中インジケーター
-
-- アップロード中: プログレスバーまたはスピナー表示
-- 処理完了: 成功通知とインポート結果サマリー表示
-  - インポートされた画像数
-  - 置換されたブロック数
-  - エラーがあった場合のエラーメッセージ
+- **ドラッグ&ドロップ対応**: 各セクションでファイルのドラッグ&ドロップをサポート
+- **処理中インジケーター**:
+  - アップロード中: プログレスバーと進捗メッセージ
+  - 処理完了: 成功通知と詳細結果表示
+- **結果表示**:
+  - エクスポート: ファイルサイズ、画像数、ダウンロードリンク
+  - インポート: 記事置き換え情報、画像数、ブロック更新数
+  - 画像のみ: インポート画像数、更新ブロック数
 
 ---
 
 ### 2.2 コア機能
 
-#### 2.2.1 ZIPファイルのアップロードと展開
+#### 2.2.1 エクスポート機能
+
+**処理フロー:**
+
+1. **記事データの収集**
+   - 記事のメタデータ（タイトル、コンテンツ、投稿日時、ステータス等）を取得
+   - オプションに応じてメタフィールド（ACF、カスタムフィールド）を収集
+
+2. **XML生成**
+   - WordPress WXR（eXtended RSS）形式でXMLを生成
+   - DOMDocumentを使用した安全なXML構築
+   - メタフィールドデータの完全保持
+
+3. **画像収集**
+   - ブロック内の画像URL解析（`core/image`, `core/gallery`, `lazyblock/*`）
+   - メタフィールド内の画像データ解析（JSON形式、ネストした構造も対応）
+   - 画像ファイルの物理的コピー
+
+4. **ZIPパッケージ化**
+   - 一時ディレクトリの作成: `wp-content/uploads/temp-export-{post_id}-{timestamp}/`
+   - XMLファイルとimagesディレクトリを含むZIP作成
+   - ブラウザダウンロード用のURLの生成
+
+**エクスポートされるファイル構造:**
+
+```
+export-{post-title}-{post-id}-{timestamp}.zip
+├── {post-title}-{post-id}.xml  # 記事データ（WXR形式）
+└── images/
+    ├── image1.jpg
+    ├── image2.png
+    └── image3.webp
+```
+
+**WXR形式の例:**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:wp="http://wordpress.org/export/1.2/"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Site Title</title>
+    <wp:wxr_version>1.2</wp:wxr_version>
+    <item>
+      <title>記事タイトル</title>
+      <content:encoded><![CDATA[記事コンテンツ]]></content:encoded>
+      <wp:post_id>123</wp:post_id>
+      <wp:post_type>post</wp:post_type>
+      <wp:status>publish</wp:status>
+      <wp:postmeta>
+        <wp:meta_key>_custom_field</wp:meta_key>
+        <wp:meta_value><![CDATA[カスタム値]]></wp:meta_value>
+      </wp:postmeta>
+    </item>
+  </channel>
+</rss>
+```
+
+---
+
+#### 2.2.2 インポート機能
+
+**処理フロー:**
+
+1. **ZIPファイルの展開**
+   - 一時ディレクトリへの展開: `wp-content/uploads/temp-import-{timestamp}/`
+   - XMLファイルとimagesディレクトリの検出
+
+2. **XML解析**
+   - WXR形式およびシンプルXML形式の自動判定
+   - 記事データとメタフィールドデータの抽出
+   - データサニタイゼーション（XSS対策、SQLインジェクション対策）
+
+3. **記事の置き換え更新**
+   - 記事置き換えモード: `wp_update_post()` で既存記事を更新
+   - メタフィールドの復元: `update_post_meta()` で各フィールドを設定
+
+4. **画像インポートとURL書き換え**
+   - 画像ファイルのメディアライブラリ登録
+   - XMLおよび記事コンテンツ内の画像URLを新しいURLに自動書き換え
+   - ブロック属性の更新
+
+**XML形式の対応:**
+
+- **WXR形式**: WordPress標準エクスポート形式
+- **シンプルXML形式**: 独自の軽量XML形式
+
+**インポートモード:**
+
+- **記事置き換え**: 現在の記事内容を完全に置き換え（確認ダイアログ付き）
+
+---
+
+#### 2.2.3 ZIPファイルのアップロードと展開（共通処理）
 
 **処理フロー:**
 
@@ -287,23 +410,80 @@ LazyBlocksやメタフィールドのJSON形式を処理する際、以下の安
 import-post-block-media-from-zip/
 ├── import-post-block-media-from-zip.php  # メインファイル
 ├── includes/
-│   ├── class-zip-handler.php             # ZIP処理クラス
-│   ├── class-media-importer.php          # メディアインポートクラス
-│   ├── class-block-updater.php           # ブロック更新クラス
+│   ├── class-zip-handler.php             # ZIP処理クラス（共通）
+│   ├── class-media-importer.php          # メディアインポートクラス（共通）
+│   ├── class-block-updater.php           # ブロック更新クラス（共通）
+│   ├── class-post-exporter.php           # 記事エクスポートクラス（新規）
+│   ├── class-post-importer.php           # 記事インポートクラス（新規）
 │   └── admin/
-│       ├── class-admin-ui.php            # 管理画面UI
-│       └── ajax-handlers.php             # AJAX処理
+│       ├── class-admin-ui.php            # 管理画面UI（拡張）
+│       └── ajax-handlers.php             # AJAX処理（拡張）
 ├── assets/
 │   ├── js/
-│   │   └── admin.js                      # 管理画面用JavaScript
+│   │   └── admin.js                      # 管理画面用JavaScript（拡張）
 │   └── css/
-│       └── admin.css                     # 管理画面用CSS
-└── readme.txt
+│       └── admin.css                     # 管理画面用CSS（拡張）
+├── readme.txt
+├── concept.md                            # 仕様書
+└── CLAUDE.md                             # 開発者向けガイド
 ```
 
 ### 3.2 主要クラスとメソッド
 
-#### 3.2.1 ZIP_Handler クラス
+#### 3.2.1 IPBMFZ_Post_Exporter クラス（新規）
+
+**責務:** 記事データのエクスポートと画像収集
+
+```php
+class IPBMFZ_Post_Exporter {
+    public function export_post($post_id, $options = array());
+    private function generate_post_xml($post, $temp_dir, $options);
+    private function generate_wxr_xml($post, $options);
+    private function generate_simple_xml($post, $options);
+    private function collect_post_images($post, $temp_dir);
+    private function extract_images_from_blocks($blocks);
+    private function extract_images_from_meta($post_id);
+    private function create_export_zip($temp_dir, $post);
+}
+```
+
+**メソッド詳細:**
+
+- `export_post(int $post_id, array $options): array|WP_Error`
+  - オプション: `['include_images' => bool, 'include_meta' => bool, 'export_format' => 'wxr'|'simple']`
+  - 戻り値: `['zip_file' => string, 'zip_url' => string, 'image_count' => int]` または `WP_Error`
+- `generate_wxr_xml(WP_Post $post, array $options): string`
+  - WordPress WXR形式でXMLを生成
+- `collect_post_images(WP_Post $post, string $temp_dir): array|WP_Error`
+  - ブロックとメタフィールドから画像を収集してコピー
+
+#### 3.2.2 IPBMFZ_Post_Importer クラス（新規）
+
+**責務:** XMLと画像の統合インポート処理
+
+```php
+class IPBMFZ_Post_Importer {
+    public function import_post_from_zip($file_data, $options = array());
+    public function import_images_only($file_data, $post_id);
+    private function find_and_parse_xml($extract_path);
+    private function parse_wxr_xml($xml_content);
+    private function parse_simple_xml($xml_content);
+    private function import_post_data($post_data, $meta_data, $options);
+    private function sanitize_post_data($post_data);
+}
+```
+
+**メソッド詳細:**
+
+- `import_post_from_zip(array $file_data, array $options): array|WP_Error`
+  - オプション: `['import_mode' => 'create_new'|'replace_current', 'target_post_id' => int]`
+  - 戻り値: `['post_id' => int, 'is_new_post' => bool, 'imported_images' => int]` または `WP_Error`
+- `find_and_parse_xml(string $extract_path): array|WP_Error`
+  - XMLファイルを検出して形式を自動判定・解析
+- `import_images_only(array $file_data, int $post_id): array|WP_Error`
+  - 従来の画像のみインポート機能（後方互換性）
+
+#### 3.2.3 ZIP_Handler クラス（共通）
 
 **責務:** ZIPファイルのアップロード・展開・削除
 
@@ -405,13 +585,77 @@ class Admin_UI {
 
 ### 3.3 AJAX処理
 
-**エンドポイント:** `wp_ajax_import_media_from_zip`
+#### 3.3.1 エクスポート用エンドポイント: `wp_ajax_export_post_with_media`
 
 **リクエスト:**
 
 ```javascript
 {
-    action: 'import_media_from_zip',
+    action: 'export_post_with_media',
+    post_id: 123,
+    nonce: 'xxxxx',
+    include_images: '1',
+    include_meta: '1'
+}
+```
+
+**レスポンス（成功時）:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "zip_url": "https://example.com/wp-content/uploads/export-title-123-1698765432.zip",
+    "post_title": "記事タイトル",
+    "image_count": 8,
+    "file_size": 2547892,
+    "file_size_formatted": "2.4 MB",
+    "message": "記事「記事タイトル」をエクスポートしました。画像: 8件, ファイルサイズ: 2.4 MB"
+  }
+}
+```
+
+#### 3.3.2 インポート用エンドポイント: `wp_ajax_import_post_with_media`
+
+**リクエスト:**
+
+```javascript
+{
+    action: 'import_post_with_media',
+    post_id: 123,
+    nonce: 'xxxxx',
+    zip_file: File object,
+    import_mode: 'create_new',
+    include_images: '1',
+    include_meta: '1'
+}
+```
+
+**レスポンス（成功時）:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "post_id": 456,
+    "post_title": "インポートされた記事",
+    "post_url": "https://example.com/wp-admin/post.php?post=456&action=edit",
+    "is_new_post": true,
+    "imported_images": 8,
+    "updated_blocks": 12,
+    "failed_matches": [],
+    "message": "記事を作成し、8件の画像をインポートして12個のブロックを更新しました。"
+  }
+}
+```
+
+#### 3.3.3 画像のみインポート用エンドポイント: `wp_ajax_import_images_only`
+
+**リクエスト:**
+
+```javascript
+{
+    action: 'import_images_only',
     post_id: 123,
     nonce: 'xxxxx',
     zip_file: File object
@@ -432,7 +676,7 @@ class Admin_UI {
 }
 ```
 
-**レスポンス（エラー時）:**
+**エラーレスポンス（全エンドポイント共通）:**
 
 ```json
 {
@@ -473,43 +717,82 @@ $attachment_id = $wpdb->get_var($wpdb->prepare("
 
 ## 4. 処理フロー全体図
 
+### 4.1 エクスポート処理フロー
+
 ```
 [ユーザー操作]
     ↓
-[1] 記事編集画面で「Import Media from ZIP」ボタンクリック
+[1] 記事編集画面で「記事をエクスポート」ボタンクリック
     ↓
-[2] ZIPファイル選択ダイアログ表示
+[2] オプション確認（画像含む・メタフィールド含む）
     ↓
-[3] ファイル選択・アップロード開始
-    ↓
-[4] AJAX リクエスト送信
+[3] AJAX リクエスト送信
     ↓
 [サーバー側処理]
     ↓
-[5] ZIP_Handler::upload_and_extract()
-    ├─ ZIPを一時ディレクトリに展開
-    └─ 画像ファイルリストを取得
+[4] Post_Exporter::export_post()
+    ├─ 記事データ収集
+    ├─ XML生成（WXR形式）
+    ├─ 画像収集・コピー
+    └─ ZIPファイル作成
     ↓
-[6] Media_Importer::import_image() ×N回
-    ├─ check_existing_attachment() - 重複チェック
-    ├─ 既存の場合: post_parent更新
-    └─ 新規の場合: wp_insert_attachment()
-    ↓
-[7] Block_Updater::update_blocks()
-    ├─ parse_blocks() - ブロック解析
-    ├─ 各ブロックとファイル名でマッチング
-    ├─ ブロック属性・innerHTMLを更新
-    └─ serialize_blocks() - 再構築
-    ↓
-[8] wp_update_post() - 記事保存
-    ↓
-[9] ZIP_Handler::cleanup() - 一時ファイル削除
-    ↓
-[10] AJAX レスポンス返却
+[5] AJAX レスポンス返却
     ↓
 [クライアント側]
     ↓
-[11] 成功通知表示・ページリロード（オプション）
+[6] ダウンロードリンク表示・統計情報表示
+```
+
+### 4.2 インポート処理フロー
+
+```
+[ユーザー操作]
+    ↓
+[1] 記事編集画面で「記事をインポート」ボタンクリック
+    ↓
+[2] ZIPファイル選択・確認ダイアログ
+    ↓
+[3] AJAX リクエスト送信
+    ↓
+[サーバー側処理]
+    ↓
+[4] Post_Importer::import_post_from_zip()
+    ├─ ZIP展開・XML検出
+    ├─ XML解析（WXR/シンプル形式）
+    ├─ 記事作成/更新
+    ├─ 画像インポート
+    └─ ブロック更新
+    ↓
+[5] AJAX レスポンス返却
+    ↓
+[クライアント側]
+    ↓
+[6] 成功通知・記事編集リンク表示
+```
+
+### 4.3 画像のみインポート処理フロー（従来機能）
+
+```
+[ユーザー操作]
+    ↓
+[1] 記事編集画面で「画像のみインポート」ボタンクリック
+    ↓
+[2] ZIPファイル選択
+    ↓
+[3] AJAX リクエスト送信
+    ↓
+[サーバー側処理]
+    ↓
+[4] Post_Importer::import_images_only()
+    ├─ ZIP展開・画像検出
+    ├─ Media_Importer::import_multiple_images()
+    └─ Block_Updater::update_blocks()
+    ↓
+[5] AJAX レスポンス返却
+    ↓
+[クライアント側]
+    ↓
+[6] 成功通知・ページリロード（オプション）
 ```
 
 ---

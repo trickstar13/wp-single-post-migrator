@@ -1,30 +1,50 @@
 /**
- * Admin JavaScript for Import Post Block Media from ZIP
+ * Admin JavaScript for Import/Export Post Block Media from ZIP
  */
 
 (function($) {
     'use strict';
 
     // Plugin object
-    const ImportMediaFromZip = {
+    const ImportExportMediaFromZip = {
 
         // Configuration
         config: {
-            fileInput: '#zip-file-input',
-            importButton: '#import-media-button',
-            progressContainer: '#import-progress',
+            // Export elements
+            exportButton: '#export-post-button',
+            exportIncludeImages: '#export-include-images',
+            exportIncludeMeta: '#export-include-meta',
+            exportProgress: '#export-progress',
+            exportProgressBar: '#export-progress-bar',
+            exportProgressMessage: '#export-progress-message',
+
+            // Import elements
+            importButton: '#import-post-button',
+            importFileInput: '#import-zip-file-input',
+            importIncludeImages: '#import-include-images',
+            importIncludeMeta: '#import-include-meta',
+
+            // Image-only import elements
+            imageImportButton: '#import-images-only-button',
+            imageFileInput: '#image-zip-file-input',
+
+            // Common elements
+            progressContainer: '#operation-progress',
             progressBar: '#progress-bar',
             progressMessage: '#progress-message',
-            resultsContainer: '#import-results',
+            resultsContainer: '#operation-results',
             resultsContent: '#results-content',
-            importAnotherButton: '#import-another',
-            uploadArea: '#import-media-upload-area'
+            resultsTitle: '#results-title',
+            performAnotherButton: '#perform-another',
+            container: '#import-export-container'
         },
 
         // State
         state: {
             isProcessing: false,
-            selectedFile: null
+            currentOperation: null,
+            selectedImportFile: null,
+            selectedImageFile: null
         },
 
         /**
@@ -32,7 +52,7 @@
          */
         init: function() {
             this.bindEvents();
-            this.updateButtonState();
+            this.updateButtonStates();
         },
 
         /**
@@ -41,22 +61,39 @@
         bindEvents: function() {
             const self = this;
 
-            // File input change
-            $(this.config.fileInput).on('change', function() {
-                self.handleFileSelection(this);
+            // Export button
+            $(this.config.exportButton).on('click', function() {
+                self.handleExport();
             });
 
-            // Import button click
+            // Import file input
+            $(this.config.importFileInput).on('change', function() {
+                self.handleImportFileSelection(this);
+            });
+
+            // Import button
             $(this.config.importButton).on('click', function() {
                 self.handleImport();
             });
 
-            // Import another button click
-            $(this.config.importAnotherButton).on('click', function() {
+            // Import mode radio buttons
+
+            // Image-only file input
+            $(this.config.imageFileInput).on('change', function() {
+                self.handleImageFileSelection(this);
+            });
+
+            // Image-only import button
+            $(this.config.imageImportButton).on('click', function() {
+                self.handleImageOnlyImport();
+            });
+
+            // Perform another operation button
+            $(this.config.performAnotherButton).on('click', function() {
                 self.resetForm();
             });
 
-            // Drag and drop support
+            // Setup drag and drop for file inputs
             this.setupDragAndDrop();
         },
 
@@ -65,66 +102,163 @@
          */
         setupDragAndDrop: function() {
             const self = this;
-            const $uploadArea = $(this.config.uploadArea);
 
-            $uploadArea.on('dragover dragenter', function(e) {
+            // Import file drag and drop
+            this.setupFileInputDragDrop(this.config.importFileInput, function(file) {
+                self.state.selectedImportFile = file;
+                self.updateButtonStates();
+            });
+
+            // Image file drag and drop
+            this.setupFileInputDragDrop(this.config.imageFileInput, function(file) {
+                self.state.selectedImageFile = file;
+                self.updateButtonStates();
+            });
+        },
+
+        /**
+         * Setup drag and drop for a specific file input
+         */
+        setupFileInputDragDrop: function(inputSelector, callback) {
+            const $input = $(inputSelector);
+            const $parent = $input.closest('.function-section');
+
+            $parent.on('dragover dragenter', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 $(this).addClass('drag-over');
             });
 
-            $uploadArea.on('dragleave', function(e) {
+            $parent.on('dragleave', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 $(this).removeClass('drag-over');
             });
 
-            $uploadArea.on('drop', function(e) {
+            $parent.on('drop', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 $(this).removeClass('drag-over');
 
                 const files = e.originalEvent.dataTransfer.files;
-                if (files.length > 0) {
-                    self.handleDroppedFile(files[0]);
+                if (files.length > 0 && this.validateFile(files[0])) {
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(files[0]);
+                    $input[0].files = dataTransfer.files;
+                    callback(files[0]);
                 }
-            });
+            }.bind(this));
         },
 
         /**
-         * Handle file selection
+         * Handle export operation
          */
-        handleFileSelection: function(input) {
+        handleExport: function() {
+            if (this.state.isProcessing) {
+                return;
+            }
+
+            this.state.currentOperation = 'export';
+            this.state.isProcessing = true;
+            this.updateButtonStates();
+            this.showProgress(importExportMediaFromZip.strings.exporting);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('action', 'export_post_with_media');
+            formData.append('post_id', importExportMediaFromZip.postId);
+            formData.append('nonce', importExportMediaFromZip.nonce);
+            formData.append('include_images', $(this.config.exportIncludeImages).is(':checked') ? '1' : '0');
+            formData.append('include_meta', $(this.config.exportIncludeMeta).is(':checked') ? '1' : '0');
+
+            this.performAjaxRequest(formData, 'export');
+        },
+
+        /**
+         * Handle import file selection
+         */
+        handleImportFileSelection: function(input) {
             const file = input.files[0];
 
-            if (file) {
-                if (this.validateFile(file)) {
-                    this.state.selectedFile = file;
-                    this.updateButtonState();
-                } else {
-                    this.resetFileInput();
-                }
+            if (file && this.validateFile(file)) {
+                this.state.selectedImportFile = file;
             } else {
-                this.state.selectedFile = null;
-                this.updateButtonState();
+                this.state.selectedImportFile = null;
+                $(input).val('');
             }
+
+            this.updateButtonStates();
+        },
+
+
+        /**
+         * Handle import operation
+         */
+        handleImport: function() {
+            if (this.state.isProcessing || !this.state.selectedImportFile) {
+                return;
+            }
+
+            // Confirm before replacing current post
+            if (!confirm(importExportMediaFromZip.strings.confirmReplace)) {
+                return;
+            }
+
+            this.state.currentOperation = 'import';
+            this.state.isProcessing = true;
+            this.updateButtonStates();
+            this.showProgress(importExportMediaFromZip.strings.importing);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('action', 'import_post_with_media');
+            formData.append('post_id', importExportMediaFromZip.postId);
+            formData.append('nonce', importExportMediaFromZip.nonce);
+            formData.append('zip_file', this.state.selectedImportFile);
+            formData.append('import_mode', 'replace_current');
+            formData.append('include_images', $(this.config.importIncludeImages).is(':checked') ? '1' : '0');
+            formData.append('include_meta', $(this.config.importIncludeMeta).is(':checked') ? '1' : '0');
+
+            this.performAjaxRequest(formData, 'import');
         },
 
         /**
-         * Handle dropped file
+         * Handle image file selection
          */
-        handleDroppedFile: function(file) {
-            if (this.validateFile(file)) {
-                this.state.selectedFile = file;
+        handleImageFileSelection: function(input) {
+            const file = input.files[0];
 
-                // Update file input
-                const $fileInput = $(this.config.fileInput);
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                $fileInput[0].files = dataTransfer.files;
-
-                this.updateButtonState();
+            if (file && this.validateFile(file)) {
+                this.state.selectedImageFile = file;
+            } else {
+                this.state.selectedImageFile = null;
+                $(input).val('');
             }
+
+            this.updateButtonStates();
+        },
+
+        /**
+         * Handle image-only import operation
+         */
+        handleImageOnlyImport: function() {
+            if (this.state.isProcessing || !this.state.selectedImageFile) {
+                return;
+            }
+
+            this.state.currentOperation = 'image-import';
+            this.state.isProcessing = true;
+            this.updateButtonStates();
+            this.showProgress(importExportMediaFromZip.strings.importing);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('action', 'import_images_only');
+            formData.append('post_id', importExportMediaFromZip.postId);
+            formData.append('nonce', importExportMediaFromZip.nonce);
+            formData.append('zip_file', this.state.selectedImageFile);
+
+            this.performAjaxRequest(formData, 'image-import');
         },
 
         /**
@@ -133,21 +267,21 @@
         validateFile: function(file) {
             // Check file type
             if (file.type !== 'application/zip' && !file.name.toLowerCase().endsWith('.zip')) {
-                this.showError(importMediaFromZip.strings.invalidFile);
+                this.showError(importExportMediaFromZip.strings.invalidFile);
                 return false;
             }
 
             // Check file size
             const maxSize = 50 * 1024 * 1024; // 50MB hard limit
             if (file.size > maxSize) {
-                this.showError(importMediaFromZip.strings.error + ': ' + this.formatFileSize(maxSize));
+                this.showError(importExportMediaFromZip.strings.error + ': ファイルサイズが上限を超えています。最大: ' + this.formatFileSize(maxSize));
                 return false;
             }
 
             // Warning for large files
             const warningSize = 10 * 1024 * 1024; // 10MB
             if (file.size > warningSize) {
-                const message = importMediaFromZip.strings.warning + ': ' +
+                const message = importExportMediaFromZip.strings.warning + ': ' +
                                'ファイルサイズが大きいです (' + this.formatFileSize(file.size) + ')。' +
                                '処理に時間がかかる場合があります。';
                 this.showWarning(message);
@@ -157,61 +291,29 @@
         },
 
         /**
-         * Update button state
+         * Update button states
          */
-        updateButtonState: function() {
-            const $button = $(this.config.importButton);
+        updateButtonStates: function() {
+            // Export button
+            $(this.config.exportButton).prop('disabled', this.state.isProcessing);
 
-            if (this.state.selectedFile && !this.state.isProcessing) {
-                $button.prop('disabled', false);
-            } else {
-                $button.prop('disabled', true);
-            }
-        },
+            // Import button
+            $(this.config.importButton).prop('disabled',
+                this.state.isProcessing || !this.state.selectedImportFile);
 
-        /**
-         * Handle import process
-         */
-        handleImport: function() {
-            if (!this.state.selectedFile) {
-                this.showError(importMediaFromZip.strings.noFile);
-                return;
-            }
-
-            if (this.state.isProcessing) {
-                return;
-            }
-
-            this.startImport();
-        },
-
-        /**
-         * Start import process
-         */
-        startImport: function() {
-            this.state.isProcessing = true;
-            this.updateButtonState();
-            this.showProgress();
-
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('action', 'import_media_from_zip');
-            formData.append('post_id', importMediaFromZip.postId);
-            formData.append('nonce', importMediaFromZip.nonce);
-            formData.append('zip_file', this.state.selectedFile);
-
-            // Start AJAX request
-            this.performAjaxRequest(formData);
+            // Image-only import button
+            $(this.config.imageImportButton).prop('disabled',
+                this.state.isProcessing || !this.state.selectedImageFile);
         },
 
         /**
          * Perform AJAX request
          */
-        performAjaxRequest: function(formData) {
+        performAjaxRequest: function(formData, operationType) {
             const self = this;
 
             $.ajax({
-                url: importMediaFromZip.ajaxUrl,
+                url: importExportMediaFromZip.ajaxUrl,
                 type: 'POST',
                 data: formData,
                 processData: false,
@@ -223,14 +325,14 @@
                     xhr.upload.addEventListener('progress', function(e) {
                         if (e.lengthComputable) {
                             const percentComplete = (e.loaded / e.total) * 50; // Upload is 50% of process
-                            self.updateProgress(percentComplete, importMediaFromZip.strings.uploading);
+                            self.updateProgress(percentComplete, importExportMediaFromZip.strings.uploading);
                         }
                     });
 
                     return xhr;
                 },
                 success: function(response) {
-                    self.handleAjaxSuccess(response);
+                    self.handleAjaxSuccess(response, operationType);
                 },
                 error: function(xhr, status, error) {
                     self.handleAjaxError(xhr, status, error);
@@ -241,16 +343,16 @@
         /**
          * Handle AJAX success
          */
-        handleAjaxSuccess: function(response) {
-            this.updateProgress(100, importMediaFromZip.strings.completed);
+        handleAjaxSuccess: function(response, operationType) {
+            this.updateProgress(100, importExportMediaFromZip.strings.completed);
 
             setTimeout(() => {
                 this.hideProgress();
 
                 if (response.success) {
-                    this.showResults(response.data);
+                    this.showResults(response.data, operationType);
                 } else {
-                    this.showError(response.data.message || importMediaFromZip.strings.error);
+                    this.showError(response.data.message || importExportMediaFromZip.strings.error);
                     this.resetProcessingState();
                 }
             }, 500);
@@ -262,7 +364,7 @@
         handleAjaxError: function(xhr, status, error) {
             this.hideProgress();
 
-            let errorMessage = importMediaFromZip.strings.error;
+            let errorMessage = importExportMediaFromZip.strings.error;
 
             if (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
                 errorMessage = xhr.responseJSON.data.message;
@@ -277,11 +379,11 @@
         /**
          * Show progress indicator
          */
-        showProgress: function() {
-            $(this.config.uploadArea).hide();
+        showProgress: function(message) {
+            $('.function-section').hide();
             $(this.config.resultsContainer).hide();
             $(this.config.progressContainer).show();
-            this.updateProgress(0, importMediaFromZip.strings.uploading);
+            this.updateProgress(0, message || importExportMediaFromZip.strings.processing);
         },
 
         /**
@@ -302,100 +404,116 @@
         /**
          * Show results
          */
-        showResults: function(data) {
+        showResults: function(data, operationType) {
             const $resultsContent = $(this.config.resultsContent);
+            const $resultsTitle = $(this.config.resultsTitle);
             $resultsContent.empty();
 
-            // Success stats
-            const statsHtml = this.buildStatsHtml(data);
-            $resultsContent.append(statsHtml);
-
-            // Validation warnings
-            if (data.warnings && data.warnings.length > 0) {
-                const warningsHtml = this.buildWarningsHtml(data.warnings);
-                $resultsContent.append(warningsHtml);
-            }
-
-            // Failed matches
-            if (data.failed_matches && data.failed_matches.length > 0) {
-                const failedHtml = this.buildFailedMatchesHtml(data.failed_matches);
-                $resultsContent.append(failedHtml);
-            }
-
-            // Import errors
-            if (data.import_errors && Object.keys(data.import_errors).length > 0) {
-                const errorsHtml = this.buildImportErrorsHtml(data.import_errors);
-                $resultsContent.append(errorsHtml);
+            // Set appropriate title
+            if (operationType === 'export') {
+                $resultsTitle.text(importExportMediaFromZip.strings.exportSuccess);
+                this.showExportResults(data, $resultsContent);
+            } else if (operationType === 'import') {
+                $resultsTitle.text(importExportMediaFromZip.strings.importSuccess);
+                this.showImportResults(data, $resultsContent);
+            } else if (operationType === 'image-import') {
+                $resultsTitle.text('画像インポート結果');
+                this.showImageImportResults(data, $resultsContent);
             }
 
             $(this.config.resultsContainer).show();
 
-            // Ask to reload page
-            if (data.updated_blocks > 0) {
-                setTimeout(() => {
-                    // Try to refresh the block editor first
-                    if (window.wp && window.wp.data && window.wp.data.dispatch) {
-                        try {
-                            const { select, dispatch } = window.wp.data;
-                            const coreEditor = dispatch('core/editor');
+            // Handle post-operation actions
+            this.handlePostOperationActions(data, operationType);
+        },
 
-                            // Force refresh the editor content
-                            if (coreEditor && coreEditor.refreshPost) {
-                                coreEditor.refreshPost();
-                                console.log('Block editor refreshed');
-                            }
-                        } catch (e) {
-                            console.log('Could not refresh block editor:', e);
-                        }
-                    }
+        /**
+         * Show export results
+         */
+        showExportResults: function(data, $container) {
+            const statsHtml = `
+                <div class="results-stats">
+                    <div class="result-success">
+                        <strong>${importExportMediaFromZip.strings.exportSuccess}</strong>
+                        <ul>
+                            <li>${importExportMediaFromZip.strings.exportedImages}: ${data.image_count}</li>
+                            <li>${importExportMediaFromZip.strings.fileSize}: ${data.file_size_formatted}</li>
+                        </ul>
+                    </div>
+                    <p>${data.message}</p>
+                    <p>
+                        <a href="${data.zip_url}" class="download-link" download>
+                            ${importExportMediaFromZip.strings.downloadFile}
+                        </a>
+                    </p>
+                </div>
+            `;
+            $container.append(statsHtml);
+        },
 
-                    if (confirm(importMediaFromZip.strings.reloadPage)) {
-                        window.location.reload();
-                    }
-                }, 1000);
+        /**
+         * Show import results
+         */
+        showImportResults: function(data, $container) {
+            const postAction = data.is_new_post
+                ? importExportMediaFromZip.strings.newPost
+                : importExportMediaFromZip.strings.updatedPost;
+
+            const statsHtml = `
+                <div class="results-stats">
+                    <div class="result-success">
+                        <strong>${postAction}</strong>
+                        <ul>
+                            <li>記事: "${data.post_title}"</li>
+                            <li>${importExportMediaFromZip.strings.importedImages}: ${data.imported_images}</li>
+                            <li>${importExportMediaFromZip.strings.updatedBlocks}: ${data.updated_blocks}</li>
+                        </ul>
+                    </div>
+                    <p>${data.message}</p>
+                    <p>
+                        <a href="${data.post_url}" class="download-link">
+                            ${importExportMediaFromZip.strings.editPost}
+                        </a>
+                    </p>
+                </div>
+            `;
+            $container.append(statsHtml);
+
+            // Add failed matches if any
+            if (data.failed_matches && data.failed_matches.length > 0) {
+                const failedHtml = this.buildFailedMatchesHtml(data.failed_matches);
+                $container.append(failedHtml);
             }
         },
 
         /**
-         * Build stats HTML
+         * Show image import results
          */
-        buildStatsHtml: function(data) {
-            return `
+        showImageImportResults: function(data, $container) {
+            const statsHtml = `
                 <div class="results-stats">
                     <div class="result-success">
-                        <strong>${importMediaFromZip.strings.success}</strong>
+                        <strong>${importExportMediaFromZip.strings.success}</strong>
                         <ul>
-                            <li>${importMediaFromZip.strings.importedImages}: ${data.imported_count}</li>
-                            <li>${importMediaFromZip.strings.updatedBlocks}: ${data.updated_blocks}</li>
+                            <li>${importExportMediaFromZip.strings.importedImages}: ${data.imported_count}</li>
+                            <li>${importExportMediaFromZip.strings.updatedBlocks}: ${data.updated_blocks}</li>
                         </ul>
                     </div>
                     <p>${data.message}</p>
                 </div>
             `;
-        },
+            $container.append(statsHtml);
 
-        /**
-         * Build warnings HTML
-         */
-        buildWarningsHtml: function(warnings) {
-            let html = `
-                <div class="validation-warnings">
-                    <div class="result-warning">
-                        <strong>ブロック検証警告</strong>
-                        <ul>
-            `;
+            // Add failed matches and import errors
+            if (data.failed_matches && data.failed_matches.length > 0) {
+                const failedHtml = this.buildFailedMatchesHtml(data.failed_matches);
+                $container.append(failedHtml);
+            }
 
-            warnings.forEach(function(warning) {
-                html += `<li>${warning}</li>`;
-            });
-
-            html += `
-                        </ul>
-                    </div>
-                </div>
-            `;
-
-            return html;
+            if (data.import_errors && Object.keys(data.import_errors).length > 0) {
+                const errorsHtml = this.buildImportErrorsHtml(data.import_errors);
+                $container.append(errorsHtml);
+            }
         },
 
         /**
@@ -405,13 +523,13 @@
             let html = `
                 <div class="failed-matches">
                     <div class="result-warning">
-                        <strong>${importMediaFromZip.strings.warning}</strong>
-                        <p>${importMediaFromZip.strings.failedMatches}:</p>
+                        <strong>${importExportMediaFromZip.strings.warning}</strong>
+                        <p>${importExportMediaFromZip.strings.failedMatches}:</p>
                         <ul>
             `;
 
             failedMatches.forEach(function(match) {
-                html += `<li>${match.message}</li>`;
+                html += `<li>${match.message || match}</li>`;
             });
 
             html += `
@@ -448,22 +566,62 @@
         },
 
         /**
-         * Reset form
+         * Handle post-operation actions
          */
-        resetForm: function() {
-            this.resetFileInput();
-            this.resetProcessingState();
-            $(this.config.resultsContainer).hide();
-            $(this.config.uploadArea).show();
+        handlePostOperationActions: function(data, operationType) {
+            // Ask to reload page for import operations with updated blocks
+            if ((operationType === 'import' || operationType === 'image-import') && data.updated_blocks > 0) {
+                setTimeout(() => {
+                    // Try to refresh the block editor first
+                    if (window.wp && window.wp.data && window.wp.data.dispatch) {
+                        try {
+                            const { dispatch } = window.wp.data;
+                            const coreEditor = dispatch('core/editor');
+
+                            if (coreEditor && coreEditor.refreshPost) {
+                                coreEditor.refreshPost();
+                                console.log('Block editor refreshed');
+                            }
+                        } catch (e) {
+                            console.log('Could not refresh block editor:', e);
+                        }
+                    }
+
+                    if (confirm(importExportMediaFromZip.strings.reloadPage)) {
+                        window.location.reload();
+                    }
+                }, 2000);
+            }
+
+            // For new post creation, offer to navigate to the new post
+            if (operationType === 'import' && data.is_new_post && data.post_url) {
+                setTimeout(() => {
+                    if (confirm('新しい記事が作成されました。編集画面に移動しますか？')) {
+                        window.location.href = data.post_url;
+                    }
+                }, 1000);
+            }
         },
 
         /**
-         * Reset file input
+         * Reset form
          */
-        resetFileInput: function() {
-            $(this.config.fileInput).val('');
-            this.state.selectedFile = null;
-            this.updateButtonState();
+        resetForm: function() {
+            this.resetFileInputs();
+            this.resetProcessingState();
+            $(this.config.resultsContainer).hide();
+            $('.function-section').show();
+        },
+
+        /**
+         * Reset file inputs
+         */
+        resetFileInputs: function() {
+            $(this.config.importFileInput).val('');
+            $(this.config.imageFileInput).val('');
+            this.state.selectedImportFile = null;
+            this.state.selectedImageFile = null;
+            this.updateButtonStates();
         },
 
         /**
@@ -471,7 +629,8 @@
          */
         resetProcessingState: function() {
             this.state.isProcessing = false;
-            this.updateButtonState();
+            this.state.currentOperation = null;
+            this.updateButtonStates();
         },
 
         /**
@@ -493,11 +652,11 @@
          */
         showNotice: function(message, type) {
             // Remove existing notices
-            $('.import-notice').remove();
+            $('.import-export-notice').remove();
 
             const noticeClass = type === 'error' ? 'notice-error' : 'notice-warning';
             const notice = $(`
-                <div class="notice ${noticeClass} import-notice is-dismissible">
+                <div class="notice ${noticeClass} import-export-notice is-dismissible">
                     <p>${message}</p>
                     <button type="button" class="notice-dismiss">
                         <span class="screen-reader-text">この通知を閉じる</span>
@@ -505,13 +664,13 @@
                 </div>
             `);
 
-            // Insert before the meta box
-            $('#import-media-container').before(notice);
+            // Insert before the container
+            $(this.config.container).before(notice);
 
-            // Auto dismiss after 5 seconds
+            // Auto dismiss after 8 seconds
             setTimeout(function() {
                 notice.fadeOut();
-            }, 5000);
+            }, 8000);
 
             // Handle dismiss button
             notice.find('.notice-dismiss').on('click', function() {
@@ -535,9 +694,9 @@
 
     // Initialize when document is ready
     $(document).ready(function() {
-        // Only initialize if we're on a post editing screen and the meta box exists
-        if ($('#import-media-container').length > 0) {
-            ImportMediaFromZip.init();
+        // Only initialize if we're on a post editing screen and the container exists
+        if ($('#import-export-container').length > 0) {
+            ImportExportMediaFromZip.init();
         }
     });
 
