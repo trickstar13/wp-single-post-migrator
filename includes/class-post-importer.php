@@ -72,9 +72,10 @@ class IPBMFZ_Post_Importer {
 
             $post_data = $xml_result['post_data'];
             $meta_data = $xml_result['meta_data'];
+            $taxonomy_data = isset($xml_result['taxonomy_data']) ? $xml_result['taxonomy_data'] : array();
 
             // Step 3: Import or update post
-            $post_result = $this->import_post_data($post_data, $meta_data, $options);
+            $post_result = $this->import_post_data($post_data, $meta_data, $taxonomy_data, $options);
             if (is_wp_error($post_result)) {
                 $this->zip_handler->cleanup($extract_path);
                 return $post_result;
@@ -219,9 +220,28 @@ class IPBMFZ_Post_Importer {
             $meta_data[$meta_key] = $meta_value;
         }
 
+        // Extract taxonomy data
+        $taxonomy_data = array();
+        $categories = $item->xpath('.//category');
+        foreach ($categories as $category) {
+            $domain = (string) $category['domain'];
+            $nicename = (string) $category['nicename'];
+            $name = (string) $category;
+
+            if (!isset($taxonomy_data[$domain])) {
+                $taxonomy_data[$domain] = array();
+            }
+
+            $taxonomy_data[$domain][] = array(
+                'name' => $name,
+                'slug' => $nicename
+            );
+        }
+
         return array(
             'post_data' => $post_data,
             'meta_data' => $meta_data,
+            'taxonomy_data' => $taxonomy_data,
             'format' => 'wxr'
         );
     }
@@ -261,9 +281,28 @@ class IPBMFZ_Post_Importer {
             }
         }
 
+        // Extract taxonomy data (simple format)
+        $taxonomy_data = array();
+        if (isset($xml->taxonomies)) {
+            foreach ($xml->taxonomies->taxonomy as $taxonomy) {
+                $taxonomy_name = (string) $taxonomy['name'];
+                if (!isset($taxonomy_data[$taxonomy_name])) {
+                    $taxonomy_data[$taxonomy_name] = array();
+                }
+
+                foreach ($taxonomy->term as $term) {
+                    $taxonomy_data[$taxonomy_name][] = array(
+                        'name' => (string) $term['name'],
+                        'slug' => (string) $term['slug']
+                    );
+                }
+            }
+        }
+
         return array(
             'post_data' => $post_data,
             'meta_data' => $meta_data,
+            'taxonomy_data' => $taxonomy_data,
             'format' => 'simple'
         );
     }
@@ -276,7 +315,7 @@ class IPBMFZ_Post_Importer {
      * @param array $options Import options
      * @return array|WP_Error Import result
      */
-    private function import_post_data($post_data, $meta_data, $options) {
+    private function import_post_data($post_data, $meta_data, $taxonomy_data, $options) {
         // Sanitize post data
         $sanitized_data = $this->sanitize_post_data($post_data);
 
@@ -314,6 +353,11 @@ class IPBMFZ_Post_Importer {
             }
         }
 
+        // Import taxonomies if available
+        if (!empty($taxonomy_data)) {
+            $this->import_taxonomies($post_id, $taxonomy_data);
+        }
+
         $this->log('INFO', sprintf(
             'Post %s successfully. ID: %d, Title: %s',
             $is_new ? 'created' : 'updated',
@@ -325,6 +369,58 @@ class IPBMFZ_Post_Importer {
             'post_id' => $post_id,
             'is_new' => $is_new
         );
+    }
+
+    /**
+     * Import taxonomies for a post
+     *
+     * @param int $post_id Post ID
+     * @param array $taxonomy_data Taxonomy data
+     */
+    private function import_taxonomies($post_id, $taxonomy_data) {
+        foreach ($taxonomy_data as $taxonomy => $terms) {
+            // Check if taxonomy exists on this site
+            if (!taxonomy_exists($taxonomy)) {
+                $this->log('WARNING', "Taxonomy '{$taxonomy}' does not exist on this site. Skipping.");
+                continue;
+            }
+
+            $term_ids = array();
+
+            foreach ($terms as $term_data) {
+                $term_name = $term_data['name'];
+                $term_slug = $term_data['slug'];
+
+                // Try to find existing term first
+                $existing_term = get_term_by('slug', $term_slug, $taxonomy);
+
+                if ($existing_term) {
+                    // Use existing term
+                    $term_ids[] = $existing_term->term_id;
+                    $this->log('INFO', "Using existing term '{$term_name}' in taxonomy '{$taxonomy}'");
+                } else {
+                    // Create new term if it doesn't exist
+                    $term_result = wp_insert_term($term_name, $taxonomy, array('slug' => $term_slug));
+
+                    if (!is_wp_error($term_result)) {
+                        $term_ids[] = $term_result['term_id'];
+                        $this->log('INFO', "Created new term '{$term_name}' in taxonomy '{$taxonomy}'");
+                    } else {
+                        $this->log('ERROR', "Failed to create term '{$term_name}' in taxonomy '{$taxonomy}': " . $term_result->get_error_message());
+                    }
+                }
+            }
+
+            // Set terms for the post
+            if (!empty($term_ids)) {
+                $result = wp_set_post_terms($post_id, $term_ids, $taxonomy);
+                if (is_wp_error($result)) {
+                    $this->log('ERROR', "Failed to set terms for taxonomy '{$taxonomy}': " . $result->get_error_message());
+                } else {
+                    $this->log('INFO', "Set " . count($term_ids) . " terms for taxonomy '{$taxonomy}' on post {$post_id}");
+                }
+            }
+        }
     }
 
     /**

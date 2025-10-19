@@ -222,6 +222,9 @@ class IPBMFZ_Post_Exporter {
         $item->appendChild($xml->createElement('wp:post_password', $post->post_password));
         $item->appendChild($xml->createElement('wp:is_sticky', is_sticky($post->ID) ? '1' : '0'));
 
+        // Add taxonomies (categories and tags)
+        $this->add_taxonomies_to_xml($xml, $item, $post->ID);
+
         // Add meta fields if requested
         if ($options['include_meta']) {
             $this->add_meta_fields_to_xml($xml, $item, $post->ID);
@@ -273,6 +276,32 @@ class IPBMFZ_Post_Exporter {
         }
 
         return $xml->saveXML();
+    }
+
+    /**
+     * Add taxonomies to XML
+     *
+     * @param DOMDocument $xml XML document
+     * @param DOMElement $item Item element
+     * @param int $post_id Post ID
+     */
+    private function add_taxonomies_to_xml($xml, $item, $post_id) {
+        // Get all taxonomies associated with this post
+        $taxonomies = get_object_taxonomies(get_post_type($post_id));
+
+        foreach ($taxonomies as $taxonomy) {
+            $terms = wp_get_post_terms($post_id, $taxonomy, array('fields' => 'all'));
+
+            if (!is_wp_error($terms) && !empty($terms)) {
+                foreach ($terms as $term) {
+                    $category = $xml->createElement('category');
+                    $category->setAttribute('domain', $taxonomy);
+                    $category->setAttribute('nicename', $term->slug);
+                    $category->appendChild($xml->createCDATASection($term->name));
+                    $item->appendChild($category);
+                }
+            }
+        }
     }
 
     /**
