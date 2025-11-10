@@ -106,16 +106,58 @@ class IPBMFZ_Post_Importer
         }
       }
 
-      // Step 5: Import synced patterns if requested
+      // Step 5: Import synced patterns if requested and update pattern references
+      $pattern_reference_map = array();
       if ($options['import_synced_patterns']) {
         $pattern_results = $this->import_synced_patterns_from_zip($extract_path, $image_results);
         if (is_wp_error($pattern_results)) {
           $this->log('WARNING', 'Pattern import failed: ' . $pattern_results->get_error_message());
           $pattern_results = array('imported_patterns' => 0, 'updated_patterns' => 0);
+        } else {
+          // Get pattern reference mapping from import results
+          $pattern_reference_map = isset($pattern_results['pattern_reference_map']) ? $pattern_results['pattern_reference_map'] : array();
+        }
+      } else {
+        // Check if ZIP contains pattern reference mapping even if patterns aren't being imported
+        $old_patterns = $this->pattern_handler->load_pattern_reference_mapping($extract_path);
+        if (!empty($old_patterns)) {
+          // Create enhanced mapping using pattern titles from export
+          $pattern_reference_map = $this->create_enhanced_pattern_mapping($imported_post_id, $old_patterns);
+        } else {
+          // Try to use any saved pattern mapping from previous imports
+          $pattern_reference_map = $this->pattern_handler->get_saved_pattern_reference_mapping();
+
+          // Check if the existing mapping actually covers the patterns used in the post
+          if (!empty($pattern_reference_map)) {
+            $content_pattern_mapping = $this->create_pattern_mapping_from_content($imported_post_id);
+            if (!empty($content_pattern_mapping)) {
+              // Merge content-based mapping with existing mapping, prioritizing content-based
+              // Use + operator to preserve numeric keys (array_merge reindexes numeric keys!)
+              $pattern_reference_map = $content_pattern_mapping + $pattern_reference_map;
+              $this->log('INFO', sprintf('Merged content-based mapping: now have %d total mappings', count($pattern_reference_map)));
+
+              // Debug: Log the new mappings that were added
+              foreach ($content_pattern_mapping as $old_id => $new_id) {
+                $this->log('INFO', sprintf('Content-based mapping added: %d -> %d', $old_id, $new_id));
+              }
+
+            }
+          } else {
+            $this->log('INFO', 'No pattern mapping found, attempting to create mapping by matching existing patterns');
+            $pattern_reference_map = $this->create_pattern_mapping_from_content($imported_post_id);
+          }
         }
       }
 
-      // Step 6: Cleanup
+      // Step 6: Update pattern references in post content if mapping exists
+      if (!empty($pattern_reference_map)) {
+        $this->log('INFO', sprintf('Found pattern reference mapping with %d entries for post %d', count($pattern_reference_map), $imported_post_id));
+        $this->update_post_pattern_references($imported_post_id, $pattern_reference_map);
+      } else {
+        $this->log('INFO', sprintf('No pattern reference mapping found for post %d', $imported_post_id));
+      }
+
+      // Step 7: Cleanup
       $this->zip_handler->cleanup($extract_path);
 
       $this->log('INFO', sprintf(
@@ -730,10 +772,20 @@ class IPBMFZ_Post_Importer
       );
     }
 
-    // Find all JSON files in the synced-patterns directory
-    $json_files = glob($patterns_dir . '/*.json');
+    // Find all JSON files in the synced-patterns directory, excluding reference mapping file
+    $all_json_files = glob($patterns_dir . '/*.json');
+    $json_files = array();
+
+    foreach ($all_json_files as $file) {
+      $filename = basename($file);
+      // Skip the reference mapping file
+      if ($filename !== 'pattern-refs.json') {
+        $json_files[] = $file;
+      }
+    }
+
     if (empty($json_files)) {
-      $this->log('INFO', 'No pattern JSON files found in synced-patterns directory');
+      $this->log('INFO', 'No pattern JSON files found in synced-patterns directory (excluding pattern-refs.json)');
       return array(
         'imported_patterns' => 0,
         'updated_patterns' => 0,
@@ -831,6 +883,337 @@ class IPBMFZ_Post_Importer
     ));
 
     return !empty($attachments) ? $attachments[0] : null;
+  }
+
+  /**
+   * Update pattern references in post content
+   *
+   * @param int $post_id Post ID
+   * @param array $pattern_reference_map Pattern ID mapping (old_id => new_id)
+   */
+  private function update_post_pattern_references($post_id, $pattern_reference_map)
+  {
+    if (empty($pattern_reference_map)) {
+      return;
+    }
+
+    $post = get_post($post_id);
+    if (!$post) {
+      $this->log('ERROR', sprintf('Post %d not found for pattern reference update', $post_id));
+      return;
+    }
+
+    $this->log('INFO', sprintf('Updating pattern references in post %d with %d mappings', $post_id, count($pattern_reference_map)));
+
+
+    $updated_content = $this->pattern_handler->update_pattern_references($post->post_content, $pattern_reference_map);
+
+    if ($updated_content !== $post->post_content) {
+      $update_result = wp_update_post(array(
+        'ID' => $post_id,
+        'post_content' => $updated_content
+      ));
+
+      if (!is_wp_error($update_result) && $update_result) {
+        $this->log('INFO', sprintf('Pattern references updated successfully in post %d', $post_id));
+      } else {
+        $this->log('ERROR', sprintf('Failed to update pattern references in post %d', $post_id));
+      }
+    } else {
+      $this->log('INFO', sprintf('No pattern references found to update in post %d', $post_id));
+    }
+  }
+
+  /**
+   * Create pattern mapping by matching titles
+   *
+   * @param array $old_patterns Original pattern data from export
+   * @return array Pattern reference mapping (old_id => new_id)
+   */
+  private function create_pattern_mapping_by_title($old_patterns)
+  {
+    $mapping = array();
+
+    foreach ($old_patterns as $old_id => $old_data) {
+      // Try to find existing pattern by title
+      $existing_patterns = get_posts(array(
+        'post_type' => 'wp_block',
+        'post_status' => 'publish',
+        'title' => $old_data['title'],
+        'posts_per_page' => 1,
+        'fields' => 'ids'
+      ));
+
+      if (!empty($existing_patterns)) {
+        $new_id = $existing_patterns[0];
+        $mapping[$old_id] = $new_id;
+        $this->log('INFO', sprintf('Mapped pattern by title: %d -> %d ("%s")', $old_id, $new_id, $old_data['title']));
+      } else {
+        // Try by slug as fallback
+        if (!empty($old_data['slug'])) {
+          $existing_patterns = get_posts(array(
+            'post_type' => 'wp_block',
+            'post_status' => 'publish',
+            'name' => $old_data['slug'],
+            'posts_per_page' => 1,
+            'fields' => 'ids'
+          ));
+
+          if (!empty($existing_patterns)) {
+            $new_id = $existing_patterns[0];
+            $mapping[$old_id] = $new_id;
+            $this->log('INFO', sprintf('Mapped pattern by slug: %d -> %d ("%s")', $old_id, $new_id, $old_data['slug']));
+          }
+        }
+      }
+    }
+
+    return $mapping;
+  }
+
+  /**
+   * Create enhanced pattern mapping using pattern titles from export
+   *
+   * @param int $post_id Post ID to analyze
+   * @param array $old_patterns Pattern reference data from export
+   * @return array Pattern reference mapping
+   */
+  private function create_enhanced_pattern_mapping($post_id, $old_patterns)
+  {
+    $post = get_post($post_id);
+    if (!$post) {
+      return array();
+    }
+
+    $mapping = array();
+
+    // Find all block references in the content
+    if (preg_match_all('/<!-- wp:block[^>]*"ref":(\d+)/', $post->post_content, $matches)) {
+      $referenced_ids = array_unique($matches[1]);
+
+      $this->log('INFO', sprintf('Found %d unique pattern references in post content: %s', count($referenced_ids), implode(', ', $referenced_ids)));
+
+      // Try to map each referenced ID to an existing pattern using title matching
+      foreach ($referenced_ids as $old_ref_id) {
+        $old_ref_id = (int)$old_ref_id;
+
+        if (isset($old_patterns[$old_ref_id])) {
+          $old_pattern_info = $old_patterns[$old_ref_id];
+          $old_title = $old_pattern_info['title'];
+          $old_slug = $old_pattern_info['slug'];
+
+
+          // First try: exact title match
+          $new_pattern = $this->find_pattern_by_title($old_title);
+          if ($new_pattern) {
+            $mapping[$old_ref_id] = $new_pattern->ID;
+            $this->log('INFO', sprintf('Exact title match: %d -> %d ("%s")', $old_ref_id, $new_pattern->ID, $old_title));
+            continue;
+          }
+
+          // Second try: slug match
+          if ($old_slug) {
+            $new_pattern = $this->find_pattern_by_slug($old_slug);
+            if ($new_pattern) {
+              $mapping[$old_ref_id] = $new_pattern->ID;
+              $this->log('INFO', sprintf('Slug match: %d -> %d ("%s" / %s)', $old_ref_id, $new_pattern->ID, $old_title, $old_slug));
+              continue;
+            }
+          }
+
+          // Third try: partial title match
+          $new_pattern = $this->find_pattern_by_partial_title($old_title);
+          if ($new_pattern) {
+            $mapping[$old_ref_id] = $new_pattern->ID;
+            $this->log('INFO', sprintf('Partial title match: %d -> %d ("%s" -> "%s")', $old_ref_id, $new_pattern->ID, $old_title, $new_pattern->post_title));
+            continue;
+          }
+
+          $this->log('WARNING', sprintf('No matching pattern found for: %d ("%s")', $old_ref_id, $old_title));
+        } else {
+          $this->log('WARNING', sprintf('No reference info found for pattern ID: %d', $old_ref_id));
+
+          // Fallback to existing logic for unmapped patterns
+          $fallback_mapping = $this->create_fallback_mapping_for_id($old_ref_id);
+          if ($fallback_mapping) {
+            $mapping[$old_ref_id] = $fallback_mapping;
+          }
+        }
+      }
+    }
+
+    $this->log('INFO', sprintf('Enhanced pattern mapping created with %d entries', count($mapping)));
+
+    return $mapping;
+  }
+
+  /**
+   * Create pattern mapping from post content
+   *
+   * @param int $post_id Post ID to analyze
+   * @return array Pattern reference mapping
+   */
+  private function create_pattern_mapping_from_content($post_id)
+  {
+    $post = get_post($post_id);
+    if (!$post) {
+      return array();
+    }
+
+    $mapping = array();
+
+    // Find all block references in the content
+    if (preg_match_all('/<!-- wp:block[^>]*"ref":(\d+)/', $post->post_content, $matches)) {
+      $referenced_ids = array_unique($matches[1]);
+
+      $this->log('INFO', sprintf('Found %d unique pattern references in post content: %s', count($referenced_ids), implode(', ', $referenced_ids)));
+
+
+      // Try to map each referenced ID to an existing pattern
+      foreach ($referenced_ids as $old_ref_id) {
+        // Ensure we use integer keys for consistency
+        $old_ref_id = (int)$old_ref_id;
+
+        // First, check if there's already a pattern with this ID
+        $existing_pattern = get_post($old_ref_id);
+        if ($existing_pattern && $existing_pattern->post_type === 'wp_block' && $existing_pattern->post_status === 'publish') {
+          $mapping[$old_ref_id] = $old_ref_id;
+          $this->log('INFO', sprintf('Direct mapping (pattern exists): %d -> %d ("%s")', $old_ref_id, $old_ref_id, $existing_pattern->post_title));
+          continue;
+        }
+
+        // If not found, try to find a pattern that might be a match
+        // Get all available patterns
+        $available_patterns = get_posts(array(
+          'post_type' => 'wp_block',
+          'post_status' => 'publish',
+          'posts_per_page' => -1,
+          'orderby' => 'ID',
+          'order' => 'ASC'
+        ));
+
+        if (!empty($available_patterns)) {
+          // Try to find the best match by checking recently created patterns first
+          $best_match = null;
+          $recent_patterns = array_filter($available_patterns, function($pattern) {
+            // Patterns created in the last hour are likely from recent import
+            return strtotime($pattern->post_date) > (time() - 3600);
+          });
+
+          if (!empty($recent_patterns)) {
+            // Use the most recently created pattern
+            $best_match = end($recent_patterns);
+            $this->log('INFO', sprintf('Smart mapping (recent pattern): %d -> %d ("%s")', $old_ref_id, $best_match->ID, $best_match->post_title));
+          } else {
+            // Fallback to first available pattern
+            $best_match = $available_patterns[0];
+            $this->log('WARNING', sprintf('Fallback mapping: %d -> %d ("%s") - This may need manual correction', $old_ref_id, $best_match->ID, $best_match->post_title));
+          }
+
+          if ($best_match) {
+            $mapping[$old_ref_id] = $best_match->ID;
+          }
+        }
+      }
+    }
+
+
+    return $mapping;
+  }
+
+  /**
+   * Find pattern by exact title match
+   *
+   * @param string $title Pattern title
+   * @return WP_Post|null Found pattern or null
+   */
+  private function find_pattern_by_title($title)
+  {
+    $patterns = get_posts(array(
+      'post_type' => 'wp_block',
+      'post_status' => 'publish',
+      'title' => $title,
+      'posts_per_page' => 1
+    ));
+
+    return !empty($patterns) ? $patterns[0] : null;
+  }
+
+  /**
+   * Find pattern by slug match
+   *
+   * @param string $slug Pattern slug
+   * @return WP_Post|null Found pattern or null
+   */
+  private function find_pattern_by_slug($slug)
+  {
+    $patterns = get_posts(array(
+      'post_type' => 'wp_block',
+      'post_status' => 'publish',
+      'name' => $slug,
+      'posts_per_page' => 1
+    ));
+
+    return !empty($patterns) ? $patterns[0] : null;
+  }
+
+  /**
+   * Find pattern by partial title match
+   *
+   * @param string $title Pattern title
+   * @return WP_Post|null Found pattern or null
+   */
+  private function find_pattern_by_partial_title($title)
+  {
+    // Try to find patterns with similar titles
+    $patterns = get_posts(array(
+      'post_type' => 'wp_block',
+      'post_status' => 'publish',
+      'posts_per_page' => 20
+    ));
+
+    foreach ($patterns as $pattern) {
+      // Simple similarity check
+      similar_text(strtolower($title), strtolower($pattern->post_title), $percent);
+      if ($percent > 70) { // 70% similarity threshold
+        return $pattern;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Create fallback mapping for a single pattern ID
+   *
+   * @param int $old_ref_id Original pattern ID
+   * @return int|null New pattern ID or null
+   */
+  private function create_fallback_mapping_for_id($old_ref_id)
+  {
+    // Check if pattern exists with same ID
+    $existing_pattern = get_post($old_ref_id);
+    if ($existing_pattern && $existing_pattern->post_type === 'wp_block' && $existing_pattern->post_status === 'publish') {
+      $this->log('INFO', sprintf('Direct ID match: %d -> %d ("%s")', $old_ref_id, $old_ref_id, $existing_pattern->post_title));
+      return $old_ref_id;
+    }
+
+    // Get recent patterns as fallback
+    $available_patterns = get_posts(array(
+      'post_type' => 'wp_block',
+      'post_status' => 'publish',
+      'posts_per_page' => 5,
+      'orderby' => 'date',
+      'order' => 'DESC'
+    ));
+
+    if (!empty($available_patterns)) {
+      $fallback_pattern = $available_patterns[0];
+      $this->log('WARNING', sprintf('Fallback mapping: %d -> %d ("%s")', $old_ref_id, $fallback_pattern->ID, $fallback_pattern->post_title));
+      return $fallback_pattern->ID;
+    }
+
+    return null;
   }
 
   /**
