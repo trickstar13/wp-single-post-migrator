@@ -946,7 +946,18 @@ class IPBMFZ_Synced_Pattern_Handler
       // Create unique title
       $counter = 1;
       $original_title = $pattern_data['title'];
+      $max_attempts = 1000;
       do {
+        if ($counter > $max_attempts) {
+          return new WP_Error(
+            'max_title_attempts_exceeded',
+            sprintf(
+              'Could not create unique pattern title after %d attempts. Original title: "%s"',
+              $max_attempts,
+              $original_title
+            )
+          );
+        }
         $pattern_data['title'] = $original_title . ' (' . $counter . ')';
         $existing_pattern = $this->get_pattern_by_title($pattern_data['title']);
         $counter++;
