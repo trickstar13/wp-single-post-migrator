@@ -883,7 +883,9 @@ class IPBMFZ_Post_Exporter
   private function create_export_zip($temp_dir, $post)
   {
     $upload_dir = wp_upload_dir();
-    $zip_filename = sanitize_file_name('export-' . $post->post_title . '-' . $post->ID . '-' . time() . '.zip');
+    // Use post slug for filename, fallback to title if slug is empty
+    $slug = $post->post_name ?: sanitize_title($post->post_title);
+    $zip_filename = sanitize_file_name('export-' . $slug . '-' . $post->ID . '-' . time() . '.zip');
     $zip_path = $upload_dir['path'] . '/' . $zip_filename;
     $zip_url = $upload_dir['url'] . '/' . $zip_filename;
 
