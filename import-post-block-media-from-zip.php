@@ -84,6 +84,7 @@ class Import_Post_Block_Media_From_ZIP
     require_once IPBMFZ_PLUGIN_DIR . 'includes/class-zip-handler.php';
     require_once IPBMFZ_PLUGIN_DIR . 'includes/class-media-importer.php';
     require_once IPBMFZ_PLUGIN_DIR . 'includes/class-block-updater.php';
+    require_once IPBMFZ_PLUGIN_DIR . 'includes/class-synced-pattern-handler.php';
     require_once IPBMFZ_PLUGIN_DIR . 'includes/class-post-exporter.php';
     require_once IPBMFZ_PLUGIN_DIR . 'includes/class-post-importer.php';
     require_once IPBMFZ_PLUGIN_DIR . 'includes/admin/class-admin-ui.php';

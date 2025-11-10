@@ -14,6 +14,7 @@
             exportButton: '#export-post-button',
             exportIncludeImages: '#export-include-images',
             exportIncludeMeta: '#export-include-meta',
+            exportIncludePatterns: '#export-include-patterns',
             exportProgress: '#export-progress',
             exportProgressBar: '#export-progress-bar',
             exportProgressMessage: '#export-progress-message',
@@ -23,10 +24,17 @@
             importFileInput: '#import-zip-file-input',
             importIncludeImages: '#import-include-images',
             importIncludeMeta: '#import-include-meta',
+            importIncludePatterns: '#import-include-patterns',
 
             // Image-only import elements
             imageImportButton: '#import-images-only-button',
             imageFileInput: '#image-zip-file-input',
+
+            // Synced patterns elements
+            exportPatternsButton: '#export-patterns-button',
+            importPatternsButton: '#import-patterns-button',
+            patternsFileInput: '#patterns-zip-file-input',
+            patternImportModeRadio: 'input[name="pattern-import-mode"]',
 
             // Common elements
             progressContainer: '#operation-progress',
@@ -44,7 +52,8 @@
             isProcessing: false,
             currentOperation: null,
             selectedImportFile: null,
-            selectedImageFile: null
+            selectedImageFile: null,
+            selectedPatternsFile: null
         },
 
         /**
@@ -88,6 +97,21 @@
                 self.handleImageOnlyImport();
             });
 
+            // Synced patterns export button
+            $(this.config.exportPatternsButton).on('click', function() {
+                self.handlePatternsExport();
+            });
+
+            // Synced patterns file input
+            $(this.config.patternsFileInput).on('change', function() {
+                self.handlePatternsFileSelection(this);
+            });
+
+            // Synced patterns import button
+            $(this.config.importPatternsButton).on('click', function() {
+                self.handlePatternsImport();
+            });
+
             // Perform another operation button
             $(this.config.performAnotherButton).on('click', function() {
                 self.resetForm();
@@ -112,6 +136,12 @@
             // Image file drag and drop
             this.setupFileInputDragDrop(this.config.imageFileInput, function(file) {
                 self.state.selectedImageFile = file;
+                self.updateButtonStates();
+            });
+
+            // Patterns file drag and drop
+            this.setupFileInputDragDrop(this.config.patternsFileInput, function(file) {
+                self.state.selectedPatternsFile = file;
                 self.updateButtonStates();
             });
         },
@@ -170,6 +200,7 @@
             formData.append('nonce', importExportMediaFromZip.nonce);
             formData.append('include_images', $(this.config.exportIncludeImages).is(':checked') ? '1' : '0');
             formData.append('include_meta', $(this.config.exportIncludeMeta).is(':checked') ? '1' : '0');
+            formData.append('include_synced_patterns', $(this.config.exportIncludePatterns).is(':checked') ? '1' : '0');
 
             this.performAjaxRequest(formData, 'export');
         },
@@ -218,6 +249,7 @@
             formData.append('import_mode', 'replace_current');
             formData.append('include_images', $(this.config.importIncludeImages).is(':checked') ? '1' : '0');
             formData.append('include_meta', $(this.config.importIncludeMeta).is(':checked') ? '1' : '0');
+            formData.append('include_synced_patterns', $(this.config.importIncludePatterns).is(':checked') ? '1' : '0');
 
             this.performAjaxRequest(formData, 'import');
         },
@@ -304,6 +336,13 @@
             // Image-only import button
             $(this.config.imageImportButton).prop('disabled',
                 this.state.isProcessing || !this.state.selectedImageFile);
+
+            // Patterns export button
+            $(this.config.exportPatternsButton).prop('disabled', this.state.isProcessing);
+
+            // Patterns import button
+            $(this.config.importPatternsButton).prop('disabled',
+                this.state.isProcessing || !this.state.selectedPatternsFile);
         },
 
         /**
@@ -419,6 +458,12 @@
             } else if (operationType === 'image-import') {
                 $resultsTitle.text('画像インポート結果');
                 this.showImageImportResults(data, $resultsContent);
+            } else if (operationType === 'export-patterns') {
+                $resultsTitle.text('同期パターンエクスポート結果');
+                this.showPatternsExportResults(data, $resultsContent);
+            } else if (operationType === 'import-patterns') {
+                $resultsTitle.text('同期パターンインポート結果');
+                this.showPatternsImportResults(data, $resultsContent);
             }
 
             $(this.config.resultsContainer).show();
@@ -619,8 +664,10 @@
         resetFileInputs: function() {
             $(this.config.importFileInput).val('');
             $(this.config.imageFileInput).val('');
+            $(this.config.patternsFileInput).val('');
             this.state.selectedImportFile = null;
             this.state.selectedImageFile = null;
+            this.state.selectedPatternsFile = null;
             this.updateButtonStates();
         },
 
@@ -676,6 +723,141 @@
             notice.find('.notice-dismiss').on('click', function() {
                 notice.fadeOut();
             });
+        },
+
+        /**
+         * Handle patterns file selection
+         */
+        handlePatternsFileSelection: function(input) {
+            const file = input.files[0];
+
+            if (file && this.validateFile(file)) {
+                this.state.selectedPatternsFile = file;
+            } else {
+                this.state.selectedPatternsFile = null;
+                $(input).val('');
+            }
+
+            this.updateButtonStates();
+        },
+
+        /**
+         * Handle patterns export operation
+         */
+        handlePatternsExport: function() {
+            if (this.state.isProcessing) {
+                return;
+            }
+
+            this.state.currentOperation = 'export-patterns';
+            this.state.isProcessing = true;
+            this.updateButtonStates();
+            this.showProgress(importExportMediaFromZip.strings.exportingPatterns || 'Exporting synced patterns...');
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('action', 'export_synced_patterns');
+            formData.append('nonce', importExportMediaFromZip.nonce);
+
+            this.performAjaxRequest(formData, 'export-patterns');
+        },
+
+        /**
+         * Handle patterns import operation
+         */
+        handlePatternsImport: function() {
+            if (this.state.isProcessing || !this.state.selectedPatternsFile) {
+                return;
+            }
+
+            this.state.currentOperation = 'import-patterns';
+            this.state.isProcessing = true;
+            this.updateButtonStates();
+            this.showProgress(importExportMediaFromZip.strings.importingPatterns || 'Importing synced patterns...');
+
+            // Get selected import mode
+            const importMode = $(this.config.patternImportModeRadio + ':checked').val();
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('action', 'import_synced_patterns');
+            formData.append('nonce', importExportMediaFromZip.nonce);
+            formData.append('zip_file', this.state.selectedPatternsFile);
+            formData.append('import_mode', importMode);
+
+            this.performAjaxRequest(formData, 'import-patterns');
+        },
+
+        /**
+         * Show patterns export results
+         */
+        showPatternsExportResults: function(data, $container) {
+            const statsHtml = `
+                <div class="results-stats">
+                    <div class="result-success">
+                        <strong>同期パターンエクスポート完了</strong>
+                        <ul>
+                            <li>エクスポートされたパターン: ${data.pattern_count}個</li>
+                            <li>含まれる画像: ${data.image_count}件</li>
+                            <li>ファイルサイズ: ${data.file_size_formatted}</li>
+                        </ul>
+                    </div>
+                    <p>${data.message}</p>
+                    <p>
+                        <a href="${data.zip_url}" class="download-link" download>
+                            <strong>ZIPファイルをダウンロード</strong>
+                        </a>
+                    </p>
+                </div>
+            `;
+            $container.append(statsHtml);
+
+            // Show errors if any
+            if (data.errors && data.errors.length > 0) {
+                const errorsHtml = `
+                    <div class="results-errors">
+                        <strong>エラー:</strong>
+                        <ul>
+                            ${data.errors.map(error => `<li>${error}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+                $container.append(errorsHtml);
+            }
+        },
+
+        /**
+         * Show patterns import results
+         */
+        showPatternsImportResults: function(data, $container) {
+            const statsHtml = `
+                <div class="results-stats">
+                    <div class="result-success">
+                        <strong>同期パターンインポート完了</strong>
+                        <ul>
+                            <li>新規作成されたパターン: ${data.imported_patterns}個</li>
+                            <li>更新されたパターン: ${data.updated_patterns}個</li>
+                            <li>スキップされたパターン: ${data.skipped_patterns}個</li>
+                            <li>インポートされた画像: ${data.imported_images}件</li>
+                        </ul>
+                    </div>
+                    <p>${data.message}</p>
+                </div>
+            `;
+            $container.append(statsHtml);
+
+            // Show errors if any
+            if (data.errors && data.errors.length > 0) {
+                const errorsHtml = `
+                    <div class="results-errors">
+                        <strong>エラー:</strong>
+                        <ul>
+                            ${data.errors.map(error => `<li>${error}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+                $container.append(errorsHtml);
+            }
         },
 
         /**

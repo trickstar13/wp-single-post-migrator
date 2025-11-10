@@ -29,6 +29,11 @@ class IPBMFZ_Post_Importer
   private $block_updater;
 
   /**
+   * Synced pattern handler instance
+   */
+  private $pattern_handler;
+
+  /**
    * Constructor
    */
   public function __construct()
@@ -36,6 +41,7 @@ class IPBMFZ_Post_Importer
     $this->zip_handler = new IPBMFZ_ZIP_Handler();
     $this->media_importer = new IPBMFZ_Media_Importer();
     $this->block_updater = new IPBMFZ_Block_Updater();
+    $this->pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
   }
 
   /**
@@ -51,7 +57,8 @@ class IPBMFZ_Post_Importer
       'import_mode' => 'create_new', // 'create_new', 'update_existing', 'replace_current'
       'target_post_id' => null,
       'import_images' => true,
-      'import_meta' => true
+      'import_meta' => true,
+      'import_synced_patterns' => false
     );
     $options = array_merge($default_options, $options);
 
@@ -90,6 +97,7 @@ class IPBMFZ_Post_Importer
 
       // Step 4: Import images if requested
       $image_results = array();
+      $pattern_results = array();
       if ($options['import_images']) {
         $image_results = $this->import_images_and_update_content($extracted_files, $imported_post_id, $extract_path);
         if (is_wp_error($image_results)) {
@@ -98,15 +106,25 @@ class IPBMFZ_Post_Importer
         }
       }
 
-      // Step 5: Cleanup
+      // Step 5: Import synced patterns if requested
+      if ($options['import_synced_patterns']) {
+        $pattern_results = $this->import_synced_patterns_from_zip($extract_path, $image_results);
+        if (is_wp_error($pattern_results)) {
+          $this->log('WARNING', 'Pattern import failed: ' . $pattern_results->get_error_message());
+          $pattern_results = array('imported_patterns' => 0, 'updated_patterns' => 0);
+        }
+      }
+
+      // Step 6: Cleanup
       $this->zip_handler->cleanup($extract_path);
 
       $this->log('INFO', sprintf(
-        'Post import completed. Post ID: %d, New post: %s, Images: %d, Updated blocks: %d',
+        'Post import completed. Post ID: %d, New post: %s, Images: %d, Updated blocks: %d, Patterns: %d',
         $imported_post_id,
         $is_new_post ? 'yes' : 'no',
         isset($image_results['imported_count']) ? $image_results['imported_count'] : 0,
-        isset($image_results['updated_blocks']) ? $image_results['updated_blocks'] : 0
+        isset($image_results['updated_blocks']) ? $image_results['updated_blocks'] : 0,
+        isset($pattern_results['imported_patterns']) ? $pattern_results['imported_patterns'] : 0
       ));
 
       return array(
@@ -116,8 +134,11 @@ class IPBMFZ_Post_Importer
         'is_new_post' => $is_new_post,
         'imported_images' => isset($image_results['imported_count']) ? $image_results['imported_count'] : 0,
         'updated_blocks' => isset($image_results['updated_blocks']) ? $image_results['updated_blocks'] : 0,
+        'imported_patterns' => isset($pattern_results['imported_patterns']) ? $pattern_results['imported_patterns'] : 0,
+        'updated_patterns' => isset($pattern_results['updated_patterns']) ? $pattern_results['updated_patterns'] : 0,
         'failed_matches' => isset($image_results['failed_matches']) ? $image_results['failed_matches'] : array(),
-        'message' => $this->generate_success_message($is_new_post, $imported_post_id, $image_results)
+        'pattern_errors' => isset($pattern_results['errors']) ? $pattern_results['errors'] : array(),
+        'message' => $this->generate_success_message($is_new_post, $imported_post_id, $image_results, $pattern_results)
       );
     } catch (Exception $e) {
       if (isset($extract_path)) {
@@ -629,25 +650,41 @@ class IPBMFZ_Post_Importer
    * @param array $image_results Image import results
    * @return string Success message
    */
-  private function generate_success_message($is_new_post, $post_id, $image_results)
+  private function generate_success_message($is_new_post, $post_id, $image_results, $pattern_results = array())
   {
     $post_action = $is_new_post ? __('作成', 'wp-single-post-migrator') : __('更新', 'wp-single-post-migrator');
     $image_count = isset($image_results['imported_count']) ? $image_results['imported_count'] : 0;
     $block_count = isset($image_results['updated_blocks']) ? $image_results['updated_blocks'] : 0;
+    $pattern_count = isset($pattern_results['imported_patterns']) ? $pattern_results['imported_patterns'] : 0;
+    $updated_pattern_count = isset($pattern_results['updated_patterns']) ? $pattern_results['updated_patterns'] : 0;
 
+    $messages = array();
+
+    // Base message
+    $messages[] = sprintf(__('記事を%sしました。', 'wp-single-post-migrator'), $post_action);
+
+    // Image message
     if ($image_count > 0) {
-      return sprintf(
-        __('記事を%sし、%d件の画像をインポートして%d個のブロックを更新しました。', 'wp-single-post-migrator'),
-        $post_action,
+      $messages[] = sprintf(
+        __('%d件の画像をインポートして%d個のブロックを更新しました。', 'wp-single-post-migrator'),
         $image_count,
         $block_count
       );
-    } else {
-      return sprintf(
-        __('記事を%sしました。画像のインポートはありませんでした。', 'wp-single-post-migrator'),
-        $post_action
-      );
     }
+
+    // Pattern message
+    if ($pattern_count > 0 || $updated_pattern_count > 0) {
+      $pattern_msg = array();
+      if ($pattern_count > 0) {
+        $pattern_msg[] = sprintf(__('%d個の同期パターンをインポート', 'wp-single-post-migrator'), $pattern_count);
+      }
+      if ($updated_pattern_count > 0) {
+        $pattern_msg[] = sprintf(__('%d個の同期パターンを更新', 'wp-single-post-migrator'), $updated_pattern_count);
+      }
+      $messages[] = implode('、', $pattern_msg) . __('しました。', 'wp-single-post-migrator');
+    }
+
+    return implode(' ', $messages);
   }
 
   /**
@@ -671,6 +708,129 @@ class IPBMFZ_Post_Importer
         $imported_count
       );
     }
+  }
+
+  /**
+   * Import synced patterns from ZIP file
+   *
+   * @param string $extract_path Extracted ZIP directory path
+   * @param array $image_results Image import results containing image mapping
+   * @return array|WP_Error Import results
+   */
+  private function import_synced_patterns_from_zip($extract_path, $image_results = array())
+  {
+    // Check if synced-patterns directory exists
+    $patterns_dir = $extract_path . '/synced-patterns';
+    if (!is_dir($patterns_dir)) {
+      $this->log('INFO', 'No synced-patterns directory found in ZIP file');
+      return array(
+        'imported_patterns' => 0,
+        'updated_patterns' => 0,
+        'errors' => array()
+      );
+    }
+
+    // Find all JSON files in the synced-patterns directory
+    $json_files = glob($patterns_dir . '/*.json');
+    if (empty($json_files)) {
+      $this->log('INFO', 'No pattern JSON files found in synced-patterns directory');
+      return array(
+        'imported_patterns' => 0,
+        'updated_patterns' => 0,
+        'errors' => array()
+      );
+    }
+
+    // Create image map from pattern images if any were imported
+    $pattern_image_map = array();
+    $pattern_images_dir = $patterns_dir . '/pattern-images';
+    if (is_dir($pattern_images_dir) && !empty($image_results)) {
+      $pattern_image_map = $this->create_pattern_image_map($pattern_images_dir, $image_results);
+    }
+
+    // Import patterns using the pattern handler
+    $import_mode = 'create_new'; // Default to creating new patterns to avoid conflicts
+    $results = $this->pattern_handler->import_synced_patterns($json_files, $pattern_image_map, $import_mode);
+
+    if (is_wp_error($results)) {
+      $this->log('ERROR', 'Pattern import failed: ' . $results->get_error_message());
+      return $results;
+    }
+
+    $this->log('INFO', sprintf(
+      'Pattern import completed. Created: %d, Updated: %d, Errors: %d',
+      $results['imported_patterns'],
+      $results['updated_patterns'],
+      count($results['errors'])
+    ));
+
+    return $results;
+  }
+
+  /**
+   * Create image mapping for pattern images
+   *
+   * @param string $pattern_images_dir Pattern images directory
+   * @param array $image_results Image import results
+   * @return array Image filename to attachment ID mapping
+   */
+  private function create_pattern_image_map($pattern_images_dir, $image_results)
+  {
+    $image_map = array();
+
+    // Get list of pattern images
+    $pattern_images = glob($pattern_images_dir . '/*');
+    if (empty($pattern_images)) {
+      return $image_map;
+    }
+
+    // Create mapping from image results if available
+    if (!empty($image_results['image_mapping'])) {
+      foreach ($image_results['image_mapping'] as $filename => $attachment_id) {
+        $image_map[$filename] = $attachment_id;
+      }
+    }
+
+    // For pattern images that weren't already imported, try to match existing media
+    foreach ($pattern_images as $image_path) {
+      $filename = basename($image_path);
+
+      if (!isset($image_map[$filename])) {
+        // Try to find existing attachment with same filename
+        $existing_attachment = $this->find_existing_attachment_by_filename($filename);
+        if ($existing_attachment) {
+          $image_map[$filename] = $existing_attachment;
+          $this->log('INFO', sprintf('Mapped pattern image %s to existing attachment %d', $filename, $existing_attachment));
+        }
+      }
+    }
+
+    return $image_map;
+  }
+
+  /**
+   * Find existing attachment by filename
+   *
+   * @param string $filename Image filename
+   * @return int|null Attachment ID or null if not found
+   */
+  private function find_existing_attachment_by_filename($filename)
+  {
+    $attachments = get_posts(array(
+      'post_type' => 'attachment',
+      'post_status' => 'inherit',
+      'meta_query' => array(
+        array(
+          'key' => '_wp_attached_file',
+          'value' => $filename,
+          'compare' => 'LIKE'
+        )
+      ),
+      'posts_per_page' => 1,
+      'fields' => 'ids'
+    ));
+
+    return !empty($attachments) ? $attachments[0] : null;
   }
 
   /**

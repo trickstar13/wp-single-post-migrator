@@ -82,6 +82,10 @@ class IPBMFZ_Admin_UI
             <input type="checkbox" id="export-include-meta" checked>
             <?php _e('メタフィールドを含める', 'wp-single-post-migrator'); ?>
           </label>
+          <label>
+            <input type="checkbox" id="export-include-patterns">
+            <?php _e('同期パターンを含める', 'wp-single-post-migrator'); ?>
+          </label>
         </div>
 
         <p>
@@ -118,6 +122,10 @@ class IPBMFZ_Admin_UI
           <label>
             <input type="checkbox" id="import-include-meta" checked>
             <?php _e('メタフィールドをインポート', 'wp-single-post-migrator'); ?>
+          </label>
+          <label>
+            <input type="checkbox" id="import-include-patterns">
+            <?php _e('同期パターンをインポート', 'wp-single-post-migrator'); ?>
           </label>
         </div>
 
@@ -162,6 +170,58 @@ class IPBMFZ_Admin_UI
             <?php _e('画像のみインポート', 'wp-single-post-migrator'); ?>
           </button>
         </p>
+      </div>
+
+      <!-- Synced Patterns Section -->
+      <div id="synced-patterns-section" class="function-section">
+        <h4><?php _e('同期パターン管理', 'wp-single-post-migrator'); ?></h4>
+        <p><?php _e('サイト全体の同期パターン（Synced Patterns）をエクスポート/インポートします。', 'wp-single-post-migrator'); ?></p>
+
+        <div class="patterns-subsection">
+          <h5><?php _e('パターンエクスポート', 'wp-single-post-migrator'); ?></h5>
+          <p><?php _e('サイト内の全同期パターンをJSONファイル付きZIPでエクスポートします。', 'wp-single-post-migrator'); ?></p>
+          <p>
+            <button
+              type="button"
+              id="export-patterns-button"
+              class="button button-secondary">
+              <?php _e('同期パターンをエクスポート', 'wp-single-post-migrator'); ?>
+            </button>
+          </p>
+        </div>
+
+        <div class="patterns-subsection">
+          <h5><?php _e('パターンインポート', 'wp-single-post-migrator'); ?></h5>
+          <p><?php _e('同期パターン付きZIPファイルからパターンをインポートします。', 'wp-single-post-migrator'); ?></p>
+
+          <div class="pattern-import-options">
+            <label>
+              <input type="radio" name="pattern-import-mode" value="create_new" checked>
+              <?php _e('新規作成（重複時は別名で作成）', 'wp-single-post-migrator'); ?>
+            </label>
+            <label>
+              <input type="radio" name="pattern-import-mode" value="replace_existing">
+              <?php _e('既存を置き換え', 'wp-single-post-migrator'); ?>
+            </label>
+          </div>
+
+          <p>
+            <input
+              type="file"
+              id="patterns-zip-file-input"
+              accept=".zip"
+              style="width: 100%;" />
+          </p>
+          <p>
+            <button
+              type="button"
+              id="import-patterns-button"
+              class="button button-secondary"
+              disabled>
+              <?php _e('同期パターンをインポート', 'wp-single-post-migrator'); ?>
+            </button>
+          </p>
+        </div>
       </div>
 
       <!-- Progress Section -->
@@ -214,6 +274,16 @@ class IPBMFZ_Admin_UI
             <li><?php _e('推奨: 10MB以下のZIPファイル', 'wp-single-post-migrator'); ?></li>
           </ul>
         </div>
+        <div class="info-tab">
+          <h5><?php _e('同期パターン機能', 'wp-single-post-migrator'); ?></h5>
+          <ul>
+            <li><?php _e('サイト全体の同期パターンを一括エクスポート', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('JSONファイル形式でパターンデータを保存', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('パターン内画像も自動的に収集・移行', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('新規作成または既存パターンの置き換え選択可', 'wp-single-post-migrator'); ?></li>
+            <li><?php _e('WordPress 6.3以降の同期パターンに対応', 'wp-single-post-migrator'); ?></li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -240,20 +310,38 @@ class IPBMFZ_Admin_UI
       }
 
       .export-options,
-      .import-options {
+      .import-options,
+      .pattern-import-options {
         margin: 10px 0;
       }
 
       .export-options label,
-      .import-options label {
+      .import-options label,
+      .pattern-import-options label {
         display: block;
         margin-bottom: 8px;
         font-size: 12px;
       }
 
       .export-options input,
-      .import-options input {
+      .import-options input,
+      .pattern-import-options input {
         margin-right: 8px;
+      }
+
+      .patterns-subsection {
+        margin: 15px 0;
+        padding: 10px;
+        border: 1px solid #e1e1e1;
+        border-radius: 3px;
+        background: #fff;
+      }
+
+      .patterns-subsection h5 {
+        margin-top: 0;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: #23282d;
       }
 
       .progress-bar-container {
