@@ -14,7 +14,6 @@
             exportButton: '#export-post-button',
             exportIncludeImages: '#export-include-images',
             exportIncludeMeta: '#export-include-meta',
-            exportIncludePatterns: '#export-include-patterns',
             exportProgress: '#export-progress',
             exportProgressBar: '#export-progress-bar',
             exportProgressMessage: '#export-progress-message',
@@ -24,7 +23,6 @@
             importFileInput: '#import-zip-file-input',
             importIncludeImages: '#import-include-images',
             importIncludeMeta: '#import-include-meta',
-            importIncludePatterns: '#import-include-patterns',
 
             // Image-only import elements
             imageImportButton: '#import-images-only-button',
@@ -200,7 +198,6 @@
             formData.append('nonce', importExportMediaFromZip.nonce);
             formData.append('include_images', $(this.config.exportIncludeImages).is(':checked') ? '1' : '0');
             formData.append('include_meta', $(this.config.exportIncludeMeta).is(':checked') ? '1' : '0');
-            formData.append('include_synced_patterns', $(this.config.exportIncludePatterns).is(':checked') ? '1' : '0');
 
             this.performAjaxRequest(formData, 'export');
         },
@@ -249,7 +246,6 @@
             formData.append('import_mode', 'replace_current');
             formData.append('include_images', $(this.config.importIncludeImages).is(':checked') ? '1' : '0');
             formData.append('include_meta', $(this.config.importIncludeMeta).is(':checked') ? '1' : '0');
-            formData.append('include_synced_patterns', $(this.config.importIncludePatterns).is(':checked') ? '1' : '0');
 
             this.performAjaxRequest(formData, 'import');
         },

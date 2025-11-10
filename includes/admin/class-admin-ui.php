@@ -82,10 +82,6 @@ class IPBMFZ_Admin_UI
             <input type="checkbox" id="export-include-meta" checked>
             <?php _e('メタフィールドを含める', 'wp-single-post-migrator'); ?>
           </label>
-          <label>
-            <input type="checkbox" id="export-include-patterns">
-            <?php _e('同期パターンを含める', 'wp-single-post-migrator'); ?>
-          </label>
         </div>
 
         <p>
@@ -109,67 +105,63 @@ class IPBMFZ_Admin_UI
       <!-- Import Section -->
       <div id="import-section" class="function-section">
         <h4><?php _e('インポート', 'wp-single-post-migrator'); ?></h4>
-        <p><?php _e('XMLと画像を含むZIPファイルから記事をインポートします。', 'wp-single-post-migrator'); ?></p>
 
-        <div class="import-options">
+        <div class="import-subsection">
+          <h5><?php _e('記事をインポート', 'wp-single-post-migrator'); ?></h5>
+          <p><?php _e('XMLと画像を含むZIPファイルから記事をインポートします（現在の記事を置き換え）。', 'wp-single-post-migrator'); ?></p>
+
+          <div class="import-options">
+            <label>
+              <input type="checkbox" id="import-include-images" checked>
+              <?php _e('画像ファイルをインポート', 'wp-single-post-migrator'); ?>
+            </label>
+            <label>
+              <input type="checkbox" id="import-include-meta" checked>
+              <?php _e('メタフィールドをインポート', 'wp-single-post-migrator'); ?>
+            </label>
+          </div>
+
           <p>
-            <strong><?php _e('現在の記事を置き換えてインポートします', 'wp-single-post-migrator'); ?></strong>
+            <input
+              type="file"
+              id="import-zip-file-input"
+              accept=".zip"
+              style="width: 100%;" />
           </p>
-          <label>
-            <input type="checkbox" id="import-include-images" checked>
-            <?php _e('画像ファイルをインポート', 'wp-single-post-migrator'); ?>
-          </label>
-          <label>
-            <input type="checkbox" id="import-include-meta" checked>
-            <?php _e('メタフィールドをインポート', 'wp-single-post-migrator'); ?>
-          </label>
-          <label>
-            <input type="checkbox" id="import-include-patterns">
-            <?php _e('同期パターンをインポート', 'wp-single-post-migrator'); ?>
-          </label>
+          <p>
+            <button
+              type="button"
+              id="import-post-button"
+              class="button button-primary"
+              disabled
+              data-post-id="<?php echo esc_attr($post->ID); ?>">
+              <?php _e('記事をインポート', 'wp-single-post-migrator'); ?>
+            </button>
+          </p>
         </div>
 
-        <p>
-          <input
-            type="file"
-            id="import-zip-file-input"
-            accept=".zip"
-            style="width: 100%;" />
-        </p>
-        <p>
-          <button
-            type="button"
-            id="import-post-button"
-            class="button button-primary"
-            disabled
-            data-post-id="<?php echo esc_attr($post->ID); ?>">
-            <?php _e('記事をインポート', 'wp-single-post-migrator'); ?>
-          </button>
-        </p>
-      </div>
+        <div class="import-subsection">
+          <h5><?php _e('画像のみインポート', 'wp-single-post-migrator'); ?></h5>
+          <p><?php _e('画像ファイルのみを含むZIPファイルから画像をインポートし、現在の記事内のブロックを更新します。', 'wp-single-post-migrator'); ?></p>
 
-      <!-- Image Only Import Section -->
-      <div id="image-import-section" class="function-section">
-        <h4><?php _e('画像のみインポート', 'wp-single-post-migrator'); ?></h4>
-        <p><?php _e('画像ファイルのみを含むZIPファイルから画像をインポートし、現在の記事内のブロックを更新します。', 'wp-single-post-migrator'); ?></p>
-
-        <p>
-          <input
-            type="file"
-            id="image-zip-file-input"
-            accept=".zip"
-            style="width: 100%;" />
-        </p>
-        <p>
-          <button
-            type="button"
-            id="import-images-only-button"
-            class="button button-secondary"
-            disabled
-            data-post-id="<?php echo esc_attr($post->ID); ?>">
-            <?php _e('画像のみインポート', 'wp-single-post-migrator'); ?>
-          </button>
-        </p>
+          <p>
+            <input
+              type="file"
+              id="image-zip-file-input"
+              accept=".zip"
+              style="width: 100%;" />
+          </p>
+          <p>
+            <button
+              type="button"
+              id="import-images-only-button"
+              class="button button-secondary"
+              disabled
+              data-post-id="<?php echo esc_attr($post->ID); ?>">
+              <?php _e('画像のみインポート', 'wp-single-post-migrator'); ?>
+            </button>
+          </p>
+        </div>
       </div>
 
       <!-- Synced Patterns Section -->
@@ -244,54 +236,13 @@ class IPBMFZ_Admin_UI
       </div>
     </div>
 
-    <div class="plugin-info">
-      <h4><?php _e('機能説明', 'wp-single-post-migrator'); ?></h4>
-      <div class="info-tabs">
-        <div class="info-tab">
-          <h5><?php _e('エクスポート機能', 'wp-single-post-migrator'); ?></h5>
-          <ul>
-            <li><?php _e('記事データをXML形式でエクスポート', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('関連画像ファイルも一括エクスポート', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('メタフィールド（ACF等）も含めて出力', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('ZIPファイルとしてダウンロード', 'wp-single-post-migrator'); ?></li>
-          </ul>
-        </div>
-        <div class="info-tab">
-          <h5><?php _e('インポート機能', 'wp-single-post-migrator'); ?></h5>
-          <ul>
-            <li><?php _e('XMLファイルから記事データを復元', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('画像ファイルも自動的にインポート', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('新規作成または既存記事の置き換え', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('ブロック内の画像URLを自動更新', 'wp-single-post-migrator'); ?></li>
-          </ul>
-        </div>
-        <div class="info-tab">
-          <h5><?php _e('画像のみインポート', 'wp-single-post-migrator'); ?></h5>
-          <ul>
-            <li><?php _e('対応形式: JPG, PNG, GIF, WebP, SVG', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('ZIPファイル内のサブフォルダも対応', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('ファイル名が一致する画像ブロックを自動更新', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('推奨: 10MB以下のZIPファイル', 'wp-single-post-migrator'); ?></li>
-          </ul>
-        </div>
-        <div class="info-tab">
-          <h5><?php _e('同期パターン機能', 'wp-single-post-migrator'); ?></h5>
-          <ul>
-            <li><?php _e('サイト全体の同期パターンを一括エクスポート', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('JSONファイル形式でパターンデータを保存', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('パターン内画像も自動的に収集・移行', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('新規作成または既存パターンの置き換え選択可', 'wp-single-post-migrator'); ?></li>
-            <li><?php _e('WordPress 6.3以降の同期パターンに対応', 'wp-single-post-migrator'); ?></li>
-          </ul>
-        </div>
-      </div>
-    </div>
 
     <style>
       .function-section {
         margin-bottom: 20px;
         padding: 15px;
         border: 1px solid #ddd;
+        border-left: 4px solid #0073aa;
         border-radius: 5px;
         background: #f9f9f9;
       }
@@ -329,7 +280,8 @@ class IPBMFZ_Admin_UI
         margin-right: 8px;
       }
 
-      .patterns-subsection {
+      .patterns-subsection,
+      .import-subsection {
         margin: 15px 0;
         padding: 10px;
         border: 1px solid #e1e1e1;
@@ -337,7 +289,8 @@ class IPBMFZ_Admin_UI
         background: #fff;
       }
 
-      .patterns-subsection h5 {
+      .patterns-subsection h5,
+      .import-subsection h5 {
         margin-top: 0;
         margin-bottom: 8px;
         font-size: 13px;
