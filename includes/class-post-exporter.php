@@ -24,12 +24,18 @@ class IPBMFZ_Post_Exporter
   private $zip_handler;
 
   /**
+   * Synced pattern handler instance
+   */
+  private $pattern_handler;
+
+  /**
    * Constructor
    */
   public function __construct()
   {
     $this->block_updater = new IPBMFZ_Block_Updater();
     $this->zip_handler = new IPBMFZ_ZIP_Handler();
+    $this->pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
   }
 
   /**
@@ -52,6 +58,7 @@ class IPBMFZ_Post_Exporter
     $default_options = array(
       'include_images' => true,
       'include_meta' => true,
+      'include_synced_patterns' => false,
       'export_format' => 'wxr'
     );
     $options = array_merge($default_options, $options);
@@ -74,6 +81,7 @@ class IPBMFZ_Post_Exporter
 
       $exported_files = array($xml_result['xml_file']);
       $image_count = 0;
+      $pattern_count = 0;
 
       // Collect and copy images if requested
       if ($options['include_images']) {
@@ -85,6 +93,20 @@ class IPBMFZ_Post_Exporter
 
         $exported_files = array_merge($exported_files, $images_result['copied_files']);
         $image_count = count($images_result['copied_files']);
+      }
+
+      // Export synced patterns if requested
+      if ($options['include_synced_patterns']) {
+        $patterns_result = $this->pattern_handler->export_synced_patterns($temp_dir);
+        if (is_wp_error($patterns_result)) {
+          $this->cleanup_temp_directory($temp_dir);
+          return $patterns_result;
+        }
+
+        $pattern_count = $patterns_result['exported_patterns'];
+        if ($pattern_count > 0) {
+          $this->log('INFO', "Exported {$pattern_count} synced patterns");
+        }
       }
 
       // Create ZIP file
@@ -104,6 +126,7 @@ class IPBMFZ_Post_Exporter
         'zip_url' => $zip_result['zip_url'],
         'post_title' => $post->post_title,
         'image_count' => $image_count,
+        'pattern_count' => $pattern_count,
         'xml_file' => basename($xml_result['xml_file']),
         'file_size' => filesize($zip_result['zip_path'])
       );
