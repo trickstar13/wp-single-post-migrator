@@ -90,8 +90,17 @@ class IPBMFZ_Synced_Pattern_Handler
       );
     }
 
+    // Create reference mapping file for post import
+    $reference_map = array();
+
     foreach ($patterns as $pattern) {
       try {
+        // Add to reference mapping
+        $reference_map[$pattern->ID] = array(
+          'title' => $pattern->post_title,
+          'slug' => $pattern->post_name ?: sanitize_title($pattern->post_title)
+        );
+
         // Generate pattern JSON data
         $pattern_data = $this->generate_pattern_json($pattern);
         if (is_wp_error($pattern_data)) {
@@ -142,6 +151,14 @@ class IPBMFZ_Synced_Pattern_Handler
           $e->getMessage()
         );
       }
+    }
+
+    // Save reference mapping file
+    if (!empty($reference_map)) {
+      $refs_file = $patterns_dir . '/pattern-refs.json';
+      $refs_content = wp_json_encode($reference_map, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+      file_put_contents($refs_file, $refs_content);
+      $this->log('INFO', sprintf('Created pattern reference mapping with %d patterns', count($reference_map)));
     }
 
     $this->log('INFO', sprintf(
@@ -607,7 +624,8 @@ class IPBMFZ_Synced_Pattern_Handler
       'imported_patterns' => 0,
       'updated_patterns' => 0,
       'skipped_patterns' => 0,
-      'errors' => array()
+      'errors' => array(),
+      'pattern_reference_map' => array() // For post import reference mapping
     );
 
     if (empty($json_files)) {
@@ -615,13 +633,38 @@ class IPBMFZ_Synced_Pattern_Handler
       return $results;
     }
 
+    // Filter out reference mapping files at this level as well
+    $filtered_files = array();
+    foreach ($json_files as $file) {
+      $filename = basename($file);
+      if ($filename !== 'pattern-refs.json') {
+        $filtered_files[] = $file;
+      } else {
+        $this->log('INFO', sprintf('Filtered out reference mapping file: %s', $filename));
+      }
+    }
+    $json_files = $filtered_files;
+
+    if (empty($json_files)) {
+      $this->log('INFO', 'No valid pattern files to import after filtering');
+      return $results;
+    }
+
     foreach ($json_files as $json_file) {
       try {
         $pattern_data = $this->parse_pattern_json($json_file);
         if (is_wp_error($pattern_data)) {
+          $filename = basename($json_file);
+
+          // Skip reference mapping files silently (these are not errors)
+          if ($filename === 'pattern-refs.json' || $pattern_data->get_error_code() === 'invalid_pattern_file') {
+            $this->log('INFO', sprintf('Skipped non-pattern file: %s', $filename));
+            continue;
+          }
+
           $results['errors'][] = sprintf(
             __('JSONファイル %s の解析に失敗: %s', 'wp-single-post-migrator'),
-            basename($json_file),
+            $filename,
             $pattern_data->get_error_message()
           );
           continue;
@@ -653,11 +696,17 @@ class IPBMFZ_Synced_Pattern_Handler
           $results['skipped_patterns']++;
         }
 
+        // Add to reference mapping for post import
+        if (isset($pattern_data['id'])) {
+          $results['pattern_reference_map'][$pattern_data['id']] = $import_result['pattern_id'];
+        }
+
         $this->log('INFO', sprintf(
-          'Pattern %s: %s (ID: %d)',
+          'Pattern %s: %s (ID: %d, Original ID: %s)',
           $import_result['action'],
           $pattern_data['title'],
-          $import_result['pattern_id']
+          $import_result['pattern_id'],
+          $pattern_data['id'] ?? 'unknown'
         ));
 
       } catch (Exception $e) {
@@ -667,6 +716,11 @@ class IPBMFZ_Synced_Pattern_Handler
           $e->getMessage()
         );
       }
+    }
+
+    // Save pattern reference mapping for later use
+    if (!empty($results['pattern_reference_map'])) {
+      $this->save_pattern_reference_mapping($results['pattern_reference_map']);
     }
 
     $this->log('INFO', sprintf(
@@ -695,6 +749,16 @@ class IPBMFZ_Synced_Pattern_Handler
       );
     }
 
+    $filename = basename($json_file);
+
+    // Skip reference mapping file
+    if ($filename === 'pattern-refs.json') {
+      return new WP_Error(
+        'invalid_pattern_file',
+        __('pattern-refs.jsonはパターンファイルではありません。', 'wp-single-post-migrator')
+      );
+    }
+
     $json_content = file_get_contents($json_file);
     if ($json_content === false) {
       return new WP_Error(
@@ -711,7 +775,15 @@ class IPBMFZ_Synced_Pattern_Handler
       );
     }
 
-    // Validate required fields
+    // Check if this is a reference mapping file by structure
+    if ($this->is_reference_mapping_data($pattern_data)) {
+      return new WP_Error(
+        'invalid_pattern_file',
+        sprintf(__('%sはリファレンスマッピングファイルです。パターンファイルではありません。', 'wp-single-post-migrator'), $filename)
+      );
+    }
+
+    // Validate required fields for pattern files
     $required_fields = array('title', 'content', 'type');
     foreach ($required_fields as $field) {
       if (empty($pattern_data[$field])) {
@@ -723,6 +795,35 @@ class IPBMFZ_Synced_Pattern_Handler
     }
 
     return $pattern_data;
+  }
+
+  /**
+   * Check if data structure is a reference mapping file
+   *
+   * @param array $data JSON data
+   * @return bool True if this looks like a reference mapping file
+   */
+  private function is_reference_mapping_data($data)
+  {
+    if (!is_array($data)) {
+      return false;
+    }
+
+    // Reference mapping files have numeric keys and specific structure
+    foreach ($data as $key => $value) {
+      if (!is_numeric($key)) {
+        return false;
+      }
+      if (!is_array($value) || !isset($value['title'])) {
+        return false;
+      }
+      // If it has 'title' and 'slug' but no 'content' or 'type', it's likely a reference mapping
+      if (isset($value['title']) && isset($value['slug']) && !isset($value['content']) && !isset($value['type'])) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -2077,6 +2178,289 @@ class IPBMFZ_Synced_Pattern_Handler
     }
 
     return $content;
+  }
+
+  /**
+   * Update synced pattern references in post content
+   *
+   * @param string $content Post content with block references
+   * @param array $pattern_reference_map Map of old pattern ID to new pattern ID
+   * @return string Updated content
+   */
+  public function update_pattern_references($content, $pattern_reference_map)
+  {
+    if (empty($pattern_reference_map)) {
+      return $content;
+    }
+
+    $this->log('INFO', sprintf('Updating pattern references with %d mappings', count($pattern_reference_map)));
+
+    $blocks = parse_blocks($content);
+
+    // Check for any core/block references in the content before processing
+    $block_refs_found = $this->find_block_references_in_content($content);
+    if (!empty($block_refs_found)) {
+      $this->log('INFO', sprintf('Found %d block references in content: %s', count($block_refs_found), implode(', ', $block_refs_found)));
+    } else {
+      $this->log('WARNING', 'No block references found in content');
+    }
+
+    $updated = $this->update_blocks_pattern_references($blocks, $pattern_reference_map);
+
+    if ($updated) {
+      $new_content = serialize_blocks($blocks);
+      $new_content = $this->fix_serialization_corruption($new_content);
+      $this->log('INFO', 'Pattern references updated successfully');
+      return $new_content;
+    } else {
+      $this->log('WARNING', 'No pattern references were updated');
+    }
+
+    return $content;
+  }
+
+  /**
+   * Find block references in content for debugging
+   *
+   * @param string $content Post content
+   * @return array Array of found reference IDs
+   */
+  private function find_block_references_in_content($content)
+  {
+    $refs = array();
+
+    // Look for wp:block with ref attribute using regex
+    if (preg_match_all('/<!-- wp:block[^>]*"ref":(\d+)/', $content, $matches)) {
+      $refs = array_unique($matches[1]);
+    }
+
+    // Also check for core/block in serialized format
+    if (preg_match_all('/"blockName":"core\/block"[^}]*"ref":(\d+)/', $content, $matches)) {
+      $refs = array_merge($refs, array_unique($matches[1]));
+    }
+
+    return array_unique($refs);
+  }
+
+  /**
+   * Update pattern references in blocks recursively
+   *
+   * @param array $blocks Array of blocks (passed by reference)
+   * @param array $pattern_reference_map Reference mapping
+   * @return bool True if any updates were made
+   */
+  private function update_blocks_pattern_references(&$blocks, $pattern_reference_map)
+  {
+    $updated = false;
+
+    foreach ($blocks as &$block) {
+      // Handle wp:block references (synced patterns)
+      if ($block['blockName'] === 'core/block' && !empty($block['attrs']['ref'])) {
+        $old_ref = (int)$block['attrs']['ref'];
+
+        if (isset($pattern_reference_map[$old_ref])) {
+          $new_ref = $pattern_reference_map[$old_ref];
+          $block['attrs']['ref'] = $new_ref;
+          $updated = true;
+
+          $this->log('INFO', sprintf('Updated block reference: %d -> %d', $old_ref, $new_ref));
+
+          // Also update innerHTML if it contains the old reference
+          if (!empty($block['innerHTML'])) {
+            $old_innerHTML = $block['innerHTML'];
+            $block['innerHTML'] = str_replace(
+              'wp-block-' . $old_ref,
+              'wp-block-' . $new_ref,
+              $block['innerHTML']
+            );
+            if ($block['innerHTML'] !== $old_innerHTML) {
+              $this->log('DEBUG', 'Updated innerHTML as well');
+            }
+          }
+        } else {
+          $this->log('WARNING', sprintf('No mapping found for block reference %d', $old_ref));
+        }
+      } else if ($block['blockName'] === 'core/block') {
+      }
+
+      // Handle inner blocks recursively
+      if (!empty($block['innerBlocks'])) {
+        if ($this->update_blocks_pattern_references($block['innerBlocks'], $pattern_reference_map)) {
+          $updated = true;
+        }
+      }
+    }
+
+    return $updated;
+  }
+
+  /**
+   * Load pattern reference mapping from export directory
+   *
+   * @param string $export_dir Export directory path
+   * @return array Pattern reference mapping or empty array
+   */
+  public function load_pattern_reference_mapping($export_dir)
+  {
+    // Check for pattern-refs.json in multiple locations
+    $possible_locations = array(
+      $export_dir . '/synced-patterns/pattern-refs.json', // Synced pattern export
+      $export_dir . '/pattern-refs.json' // Post export
+    );
+
+    $refs_file = null;
+    foreach ($possible_locations as $location) {
+      if (file_exists($location)) {
+        $refs_file = $location;
+        break;
+      }
+    }
+
+    if (!$refs_file) {
+      $this->log('INFO', 'No pattern reference mapping file found');
+      return array();
+    }
+
+    $refs_content = file_get_contents($refs_file);
+    if ($refs_content === false) {
+      $this->log('WARNING', 'Failed to read pattern reference mapping file');
+      return array();
+    }
+
+    $refs_data = json_decode($refs_content, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+      $this->log('WARNING', 'Failed to parse pattern reference mapping: ' . json_last_error_msg());
+      return array();
+    }
+
+    $this->log('INFO', sprintf('Loaded pattern reference mapping with %d entries', count($refs_data)));
+    return $refs_data;
+  }
+
+  /**
+   * Save pattern reference mapping to WordPress options
+   *
+   * @param array $pattern_reference_map Pattern reference mapping
+   */
+  public function save_pattern_reference_mapping($pattern_reference_map)
+  {
+    $option_name = 'ipbmfz_pattern_reference_map';
+
+    // Get existing mapping and merge with new one
+    $existing_mapping = get_option($option_name, array());
+
+    // Ensure all keys are integers for consistency
+    $normalized_new_mapping = array();
+    foreach ($pattern_reference_map as $old_id => $new_id) {
+      $normalized_new_mapping[(int)$old_id] = (int)$new_id;
+    }
+
+    $merged_mapping = array_merge($existing_mapping, $normalized_new_mapping);
+
+    // Save to WordPress options table
+    update_option($option_name, $merged_mapping);
+
+    $this->log('INFO', sprintf(
+      'Saved pattern reference mapping: %d new mappings (total: %d)',
+      count($normalized_new_mapping),
+      count($merged_mapping)
+    ));
+  }
+
+  /**
+   * Get saved pattern reference mapping
+   *
+   * @return array Saved pattern reference mapping
+   */
+  public function get_saved_pattern_reference_mapping()
+  {
+    $option_name = 'ipbmfz_pattern_reference_map';
+    $mapping = get_option($option_name, array());
+
+    $this->log('INFO', sprintf('Retrieved saved pattern reference mapping: %d mappings', count($mapping)));
+
+    if (empty($mapping)) {
+      $this->log('WARNING', 'No pattern reference mapping found in database');
+    }
+
+    return $mapping;
+  }
+
+  /**
+   * Clear saved pattern reference mapping
+   */
+  public function clear_pattern_reference_mapping()
+  {
+    $option_name = 'ipbmfz_pattern_reference_map';
+    delete_option($option_name);
+    $this->log('INFO', 'Cleared saved pattern reference mapping');
+  }
+
+  /**
+   * Get pattern reference mapping info for admin display
+   *
+   * @return array Formatted mapping info
+   */
+  public function get_pattern_mapping_info()
+  {
+    $mapping = $this->get_saved_pattern_reference_mapping();
+    $info = array(
+      'total_mappings' => count($mapping),
+      'mappings' => array()
+    );
+
+    foreach ($mapping as $old_id => $new_id) {
+      $new_pattern = get_post($new_id);
+      $info['mappings'][] = array(
+        'old_id' => $old_id,
+        'new_id' => $new_id,
+        'title' => $new_pattern ? $new_pattern->post_title : __('パターンが見つかりません', 'wp-single-post-migrator'),
+        'status' => $new_pattern && $new_pattern->post_status === 'publish' ? 'active' : 'inactive'
+      );
+    }
+
+    return $info;
+  }
+
+  /**
+   * Create pattern reference mapping for post import
+   *
+   * @param array $old_patterns Original pattern data from export
+   * @param array $import_results Results from pattern import
+   * @return array Pattern reference mapping (old_id => new_id)
+   */
+  public function create_pattern_reference_mapping($old_patterns, $import_results)
+  {
+    $mapping = array();
+
+    if (isset($import_results['pattern_reference_map'])) {
+      return $import_results['pattern_reference_map'];
+    }
+
+    // Try to get saved mapping first
+    $saved_mapping = $this->get_saved_pattern_reference_mapping();
+    if (!empty($saved_mapping)) {
+      // Filter saved mapping to only include patterns from the current export
+      foreach ($old_patterns as $old_id => $old_data) {
+        if (isset($saved_mapping[$old_id])) {
+          $mapping[$old_id] = $saved_mapping[$old_id];
+          $this->log('INFO', sprintf('Using saved mapping: %d -> %d ("%s")', $old_id, $saved_mapping[$old_id], $old_data['title']));
+        }
+      }
+    }
+
+    // Fallback: try to match by title/slug for unmapped patterns
+    foreach ($old_patterns as $old_id => $old_data) {
+      if (!isset($mapping[$old_id])) {
+        $pattern = $this->get_pattern_by_title($old_data['title']);
+        if ($pattern) {
+          $mapping[$old_id] = $pattern->ID;
+          $this->log('INFO', sprintf('Mapped pattern by title: %d -> %d ("%s")', $old_id, $pattern->ID, $old_data['title']));
+        }
+      }
+    }
+
+    return $mapping;
   }
 
   /**

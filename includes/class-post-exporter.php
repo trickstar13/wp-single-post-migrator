@@ -109,6 +109,15 @@ class IPBMFZ_Post_Exporter
         }
       }
 
+      // Always create pattern reference mapping for posts that use synced patterns
+      $pattern_refs = $this->create_pattern_reference_mapping($post);
+      if (!empty($pattern_refs)) {
+        $pattern_refs_file = $temp_dir . '/pattern-refs.json';
+        $pattern_refs_content = wp_json_encode($pattern_refs, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        file_put_contents($pattern_refs_file, $pattern_refs_content);
+        $this->log('INFO', sprintf('Created pattern reference mapping with %d patterns for post export', count($pattern_refs)));
+      }
+
       // Create ZIP file
       $zip_result = $this->create_export_zip($temp_dir, $post);
       if (is_wp_error($zip_result)) {
@@ -981,6 +990,64 @@ class IPBMFZ_Post_Exporter
       }
     }
     rmdir($dir);
+  }
+
+  /**
+   * Create pattern reference mapping for post export
+   *
+   * @param WP_Post $post Post object
+   * @return array Pattern reference mapping
+   */
+  private function create_pattern_reference_mapping($post)
+  {
+    $pattern_refs = array();
+
+    // Parse blocks to find pattern references
+    $blocks = parse_blocks($post->post_content);
+    $pattern_ids = $this->extract_pattern_refs_from_blocks($blocks);
+
+    if (empty($pattern_ids)) {
+      return $pattern_refs;
+    }
+
+    // Get pattern information for each referenced pattern
+    foreach ($pattern_ids as $pattern_id) {
+      $pattern = get_post($pattern_id);
+      if ($pattern && $pattern->post_type === 'wp_block') {
+        $pattern_refs[$pattern_id] = array(
+          'title' => $pattern->post_title,
+          'slug' => $pattern->post_name ?: sanitize_title($pattern->post_title)
+        );
+      }
+    }
+
+    return $pattern_refs;
+  }
+
+  /**
+   * Extract pattern reference IDs from blocks
+   *
+   * @param array $blocks Array of blocks
+   * @return array Array of pattern IDs
+   */
+  private function extract_pattern_refs_from_blocks($blocks)
+  {
+    $pattern_ids = array();
+
+    foreach ($blocks as $block) {
+      // Check for core/block with ref attribute
+      if ($block['blockName'] === 'core/block' && !empty($block['attrs']['ref'])) {
+        $pattern_ids[] = intval($block['attrs']['ref']);
+      }
+
+      // Recursively check inner blocks
+      if (!empty($block['innerBlocks'])) {
+        $inner_pattern_ids = $this->extract_pattern_refs_from_blocks($block['innerBlocks']);
+        $pattern_ids = array_merge($pattern_ids, $inner_pattern_ids);
+      }
+    }
+
+    return array_unique($pattern_ids);
   }
 
   /**
