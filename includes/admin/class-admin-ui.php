@@ -188,11 +188,11 @@ class IPBMFZ_Admin_UI
 
           <div class="pattern-import-options">
             <label>
-              <input type="radio" name="pattern-import-mode" value="create_new" checked>
+              <input type="radio" name="pattern-import-mode" value="create_new">
               <?php _e('新規作成（重複時は別名で作成）', 'wp-single-post-migrator'); ?>
             </label>
             <label>
-              <input type="radio" name="pattern-import-mode" value="replace_existing">
+              <input type="radio" name="pattern-import-mode" value="replace_existing" checked>
               <?php _e('既存を置き換え', 'wp-single-post-migrator'); ?>
             </label>
           </div>
