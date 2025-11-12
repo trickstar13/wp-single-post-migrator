@@ -18,9 +18,10 @@ class IPBMFZ_Block_Updater
    *
    * @param int $post_id Post ID
    * @param array $image_map Array mapping filename to attachment_id
+   * @param array $export_domains Array of domains extracted from export (optional)
    * @return array Results array
    */
-  public function update_blocks($post_id, $image_map)
+  public function update_blocks($post_id, $image_map, $export_domains = array())
   {
     $post = get_post($post_id);
     if (!$post) {
@@ -53,10 +54,10 @@ class IPBMFZ_Block_Updater
     );
 
     // Process blocks recursively
-    $this->process_blocks($blocks, $image_map, $results);
+    $this->process_blocks($blocks, $image_map, $results, $export_domains);
 
     // Process meta fields
-    $meta_updates = $this->process_meta_fields($post_id, $image_map, $results);
+    $meta_updates = $this->process_meta_fields($post_id, $image_map, $results, $export_domains);
     $results['updated_blocks'] += $meta_updates;
 
     // Validate blocks before saving
@@ -138,7 +139,7 @@ class IPBMFZ_Block_Updater
    * @param array $image_map Filename to attachment_id mapping
    * @param array $results Results array (passed by reference)
    */
-  private function process_blocks(&$blocks, $image_map, &$results)
+  private function process_blocks(&$blocks, $image_map, &$results, $export_domains = array())
   {
     foreach ($blocks as &$block) {
       if (empty($block['blockName'])) {
@@ -160,12 +161,12 @@ class IPBMFZ_Block_Updater
         default:
           // Check for LazyBlocks custom blocks
           if (strpos($block['blockName'], 'lazyblock/') === 0) {
-            $lazyblock_updates = $this->update_lazyblock_images($block, $image_map, $results);
+            $lazyblock_updates = $this->update_lazyblock_images($block, $image_map, $results, $export_domains);
             $results['updated_blocks'] += $lazyblock_updates;
           }
           // Process inner blocks for other block types
           if (!empty($block['innerBlocks'])) {
-            $this->process_blocks($block['innerBlocks'], $image_map, $results);
+            $this->process_blocks($block['innerBlocks'], $image_map, $results, $export_domains);
           }
           break;
       }
@@ -383,7 +384,7 @@ class IPBMFZ_Block_Updater
    * @param array $results Results array (passed by reference)
    * @return int Number of updated images
    */
-  private function update_lazyblock_images(&$block, $image_map, &$results)
+  private function update_lazyblock_images(&$block, $image_map, &$results, $export_domains = array())
   {
     $updated_count = 0;
 
@@ -433,7 +434,7 @@ class IPBMFZ_Block_Updater
         // Store original value in case update fails
         $original_value = $attr_value;
 
-        if ($this->update_lazyblock_image_attribute($attr_value, $image_map, $results)) {
+        if ($this->update_lazyblock_image_attribute($attr_value, $image_map, $results, $export_domains)) {
           $updated_count++;
         } else {
           // If update failed, restore original value to prevent data loss
@@ -511,7 +512,7 @@ class IPBMFZ_Block_Updater
    * @param array $results Results array (passed by reference)
    * @return bool True if updated
    */
-  private function update_lazyblock_image_attribute(&$attr_value, $image_map, &$results)
+  private function update_lazyblock_image_attribute(&$attr_value, $image_map, &$results, $export_domains = array())
   {
     // Store original value to preserve formatting
     $original_decoded = urldecode($attr_value);
@@ -526,7 +527,7 @@ class IPBMFZ_Block_Updater
     $updated = false;
 
     // Use the same logic as meta field processing for consistency
-    $updated = $this->update_image_data_recursively($image_data, $image_map, $results);
+    $updated = $this->update_image_data_recursively($image_data, $image_map, $results, $export_domains);
 
     if ($updated) {
       // Clean up any problematic HTML content in description fields
@@ -564,7 +565,7 @@ class IPBMFZ_Block_Updater
    * @param array $results Results array (passed by reference)
    * @return bool True if any updates were made
    */
-  private function update_image_data_recursively(&$data, $image_map, &$results)
+  private function update_image_data_recursively(&$data, $image_map, &$results, $export_domains = array())
   {
     if (!is_array($data)) {
       return false;
@@ -582,12 +583,12 @@ class IPBMFZ_Block_Updater
     // Process array elements recursively
     foreach ($data as $key => &$value) {
       if (is_array($value)) {
-        if ($this->update_image_data_recursively($value, $image_map, $results)) {
+        if ($this->update_image_data_recursively($value, $image_map, $results, $export_domains)) {
           $updated = true;
         }
       } elseif (is_string($value)) {
         // Update URLs in all string fields that contain external domains
-        if ($this->update_html_image_urls($value, $image_map)) {
+        if ($this->update_html_image_urls($value, $image_map, $export_domains)) {
           $updated = true;
         }
       }
@@ -601,9 +602,10 @@ class IPBMFZ_Block_Updater
    *
    * @param string $html_content HTML content (passed by reference)
    * @param array $image_map Image mapping array (not used, kept for compatibility)
+   * @param array $export_domains Array of domains to replace (optional)
    * @return bool True if any URLs were updated
    */
-  private function update_html_image_urls(&$html_content, $image_map)
+  private function update_html_image_urls(&$html_content, $image_map, $export_domains = array())
   {
     if (!is_string($html_content)) {
       return false;
@@ -612,13 +614,18 @@ class IPBMFZ_Block_Updater
     // Get current site URL
     $new_domain = home_url();
 
-    // Define old domains to replace (add more as needed)
-    $old_domains = [
-      'https://stg-renewal.shabu-yuzuan.jp',
-      'http://stg-renewal.shabu-yuzuan.jp',
-      'https://shabu-yuzuan.jp',
-      'http://shabu-yuzuan.jp'
-    ];
+    // Use dynamic export domains if provided, otherwise use hardcoded fallback
+    if (!empty($export_domains)) {
+      $old_domains = $export_domains;
+    } else {
+      // Fallback to hardcoded domains for backward compatibility
+      $old_domains = [
+        'https://stg-renewal.shabu-yuzuan.jp',
+        'http://stg-renewal.shabu-yuzuan.jp',
+        'https://shabu-yuzuan.jp',
+        'http://shabu-yuzuan.jp'
+      ];
+    }
 
     $updated = false;
 
@@ -1021,7 +1028,7 @@ class IPBMFZ_Block_Updater
    * @param array $results Results array (passed by reference)
    * @return int Number of updated meta fields
    */
-  private function process_meta_fields($post_id, $image_map, &$results)
+  private function process_meta_fields($post_id, $image_map, &$results, $export_domains = array())
   {
     $updated_count = 0;
 
@@ -1083,7 +1090,7 @@ class IPBMFZ_Block_Updater
     }
 
     // Use the same recursive logic as block attributes
-    $updated = $this->update_image_data_recursively($data, $image_map, $results);
+    $updated = $this->update_image_data_recursively($data, $image_map, $results, $export_domains);
 
     if ($updated) {
       // Clean up any problematic HTML content

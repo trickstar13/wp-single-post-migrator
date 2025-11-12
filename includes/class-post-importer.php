@@ -84,6 +84,7 @@ class IPBMFZ_Post_Importer
       $post_data = $xml_result['post_data'];
       $meta_data = $xml_result['meta_data'];
       $taxonomy_data = isset($xml_result['taxonomy_data']) ? $xml_result['taxonomy_data'] : array();
+      $export_domains = isset($xml_result['export_domains']) ? $xml_result['export_domains'] : array();
 
       // Step 3: Import or update post
       $post_result = $this->import_post_data($post_data, $meta_data, $taxonomy_data, $options);
@@ -99,7 +100,7 @@ class IPBMFZ_Post_Importer
       $image_results = array();
       $pattern_results = array();
       if ($options['import_images']) {
-        $image_results = $this->import_images_and_update_content($extracted_files, $imported_post_id, $extract_path);
+        $image_results = $this->import_images_and_update_content($extracted_files, $imported_post_id, $extract_path, $export_domains);
         if (is_wp_error($image_results)) {
           $this->log('WARNING', 'Image import failed but post was created: ' . $image_results->get_error_message());
           $image_results = array('imported_count' => 0, 'updated_blocks' => 0);
@@ -300,10 +301,22 @@ class IPBMFZ_Post_Importer
       );
     }
 
+    // Extract export domains if available
+    $export_domains = array();
+    $domain_elements = $xml->xpath('//wp:export_domains');
+    if (!empty($domain_elements)) {
+      $domains_json = (string) $domain_elements[0];
+      $parsed_domains = json_decode($domains_json, true);
+      if (json_last_error() === JSON_ERROR_NONE && is_array($parsed_domains)) {
+        $export_domains = $parsed_domains;
+      }
+    }
+
     return array(
       'post_data' => $post_data,
       'meta_data' => $meta_data,
       'taxonomy_data' => $taxonomy_data,
+      'export_domains' => $export_domains,
       'format' => 'wxr'
     );
   }
@@ -555,9 +568,10 @@ class IPBMFZ_Post_Importer
    * @param array $image_files Extracted image files
    * @param int $post_id Post ID
    * @param string $extract_path Extract path
+   * @param array $export_domains Array of domains from export (optional)
    * @return array|WP_Error Import result
    */
-  private function import_images_and_update_content($image_files, $post_id, $extract_path)
+  private function import_images_and_update_content($image_files, $post_id, $extract_path, $export_domains = array())
   {
     // Find images directory
     $images_dir = $extract_path . '/images';
@@ -595,7 +609,7 @@ class IPBMFZ_Post_Importer
     }
 
     // Update post content with new image URLs
-    $block_results = $this->block_updater->update_blocks($post_id, $import_results['imported']);
+    $block_results = $this->block_updater->update_blocks($post_id, $import_results['imported'], $export_domains);
 
     if (is_wp_error($block_results)) {
       return $block_results;
@@ -643,7 +657,7 @@ class IPBMFZ_Post_Importer
       }
 
       // Step 3: Update blocks
-      $block_results = $this->block_updater->update_blocks($post_id, $import_results['imported']);
+      $block_results = $this->block_updater->update_blocks($post_id, $import_results['imported'], array());
 
       if (is_wp_error($block_results)) {
         $this->zip_handler->cleanup($extract_path);
