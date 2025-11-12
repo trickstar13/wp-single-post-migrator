@@ -636,7 +636,7 @@ class IPBMFZ_Block_Updater
    * @param string $url URL to check
    * @return bool True if URL needs updating
    */
-  private function needs_domain_update($url)
+  public function needs_domain_update($url)
   {
     // Skip non-URLs and very long strings that are likely JSON
     if (strlen($url) > 500 || strpos($url, '%5B') !== false || strpos($url, '%7B') !== false) {
@@ -664,12 +664,12 @@ class IPBMFZ_Block_Updater
   }
 
   /**
-   * Update URL domain to match current site
+   * Update URL domain to match current site with proper subdirectory handling
    *
    * @param string $url URL to update
    * @return string Updated URL
    */
-  private function update_url_domain($url)
+  public function update_url_domain($url)
   {
     $parsed_url = parse_url($url);
     $current_site_url = site_url();
@@ -679,15 +679,30 @@ class IPBMFZ_Block_Updater
       return $url;
     }
 
+    // Extract the path starting from /wp-content/
+    $path = !empty($parsed_url['path']) ? $parsed_url['path'] : '';
+    $wp_content_pos = strpos($path, '/wp-content/');
+
+    if ($wp_content_pos === false) {
+      // If no wp-content found, return original URL
+      return $url;
+    }
+
+    // Get the relative path from wp-content onwards
+    $relative_path = substr($path, $wp_content_pos);
+
+    // Get the base path from current site (e.g., "/blog" if WordPress is in subdirectory)
+    $base_path = !empty($current_parsed['path']) ? rtrim($current_parsed['path'], '/') : '';
+
     // Build new URL with current domain
     $scheme = !empty($current_parsed['scheme']) ? $current_parsed['scheme'] : 'https';
     $host = !empty($current_parsed['host']) ? $current_parsed['host'] : '';
     $port = !empty($current_parsed['port']) ? ':' . $current_parsed['port'] : '';
-    $path = !empty($parsed_url['path']) ? $parsed_url['path'] : '';
+    $full_path = $base_path . $relative_path;
     $query = !empty($parsed_url['query']) ? '?' . $parsed_url['query'] : '';
     $fragment = !empty($parsed_url['fragment']) ? '#' . $parsed_url['fragment'] : '';
 
-    return $scheme . '://' . $host . $port . $path . $query . $fragment;
+    return $scheme . '://' . $host . $port . $full_path . $query . $fragment;
   }
 
   /**
