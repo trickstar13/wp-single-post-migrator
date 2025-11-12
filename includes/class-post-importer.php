@@ -35,13 +35,30 @@ class IPBMFZ_Post_Importer
 
   /**
    * Constructor
+   *
+   * @throws Exception If required classes are not available
    */
   public function __construct()
   {
+    if (!class_exists('IPBMFZ_ZIP_Handler')) {
+      throw new Exception('IPBMFZ_ZIP_Handler class not found');
+    }
+    if (!class_exists('IPBMFZ_Media_Importer')) {
+      throw new Exception('IPBMFZ_Media_Importer class not found');
+    }
+    if (!class_exists('IPBMFZ_Block_Updater')) {
+      throw new Exception('IPBMFZ_Block_Updater class not found');
+    }
+
     $this->zip_handler = new IPBMFZ_ZIP_Handler();
     $this->media_importer = new IPBMFZ_Media_Importer();
     $this->block_updater = new IPBMFZ_Block_Updater();
-    $this->pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+
+    try {
+      $this->pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+    } catch (Exception $e) {
+      throw new Exception('Failed to initialize synced pattern handler: ' . $e->getMessage());
+    }
   }
 
   /**
@@ -1241,10 +1258,14 @@ class IPBMFZ_Post_Importer
   }
 
   /**
-   * Direct database post update to preserve LazyBlocks newlines
+   * Direct database post update to preserve LazyBlocks newlines and update all sanitized fields
+   *
+   * Updates all sanitized post fields including post_content, post_title, post_excerpt,
+   * post_status, post_type, post_name, post_date, comment_status, ping_status,
+   * menu_order, and post_password when present in the data.
    *
    * @param int $post_id Post ID
-   * @param array $post_data Post data
+   * @param array $post_data Sanitized post data from sanitize_post_data()
    * @return int|WP_Error Post ID on success, WP_Error on failure
    */
   private function direct_post_update($post_id, $post_data)
@@ -1256,7 +1277,7 @@ class IPBMFZ_Post_Importer
     $update_data = array();
     $update_format = array();
 
-    // Map post data to database columns
+    // Map all sanitized post data to database columns
     if (isset($post_data['post_content'])) {
       $update_data['post_content'] = $post_data['post_content'];
       $update_format[] = '%s';
@@ -1271,6 +1292,41 @@ class IPBMFZ_Post_Importer
     }
     if (isset($post_data['post_status'])) {
       $update_data['post_status'] = $post_data['post_status'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['post_type'])) {
+      $update_data['post_type'] = $post_data['post_type'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['post_name'])) {
+      $update_data['post_name'] = $post_data['post_name'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['post_date'])) {
+      $update_data['post_date'] = $post_data['post_date'];
+      $update_format[] = '%s';
+
+      // Also update post_date_gmt if post_date is provided
+      if ($post_data['post_date'] !== '0000-00-00 00:00:00') {
+        $gmt_date = get_gmt_from_date($post_data['post_date']);
+        $update_data['post_date_gmt'] = $gmt_date;
+        $update_format[] = '%s';
+      }
+    }
+    if (isset($post_data['comment_status'])) {
+      $update_data['comment_status'] = $post_data['comment_status'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['ping_status'])) {
+      $update_data['ping_status'] = $post_data['ping_status'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['menu_order'])) {
+      $update_data['menu_order'] = $post_data['menu_order'];
+      $update_format[] = '%d';
+    }
+    if (isset($post_data['post_password'])) {
+      $update_data['post_password'] = $post_data['post_password'];
       $update_format[] = '%s';
     }
 

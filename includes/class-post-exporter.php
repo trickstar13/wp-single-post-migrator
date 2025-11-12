@@ -30,12 +30,26 @@ class IPBMFZ_Post_Exporter
 
   /**
    * Constructor
+   *
+   * @throws Exception If required classes are not available
    */
   public function __construct()
   {
+    if (!class_exists('IPBMFZ_Block_Updater')) {
+      throw new Exception('IPBMFZ_Block_Updater class not found');
+    }
+    if (!class_exists('IPBMFZ_ZIP_Handler')) {
+      throw new Exception('IPBMFZ_ZIP_Handler class not found');
+    }
+
     $this->block_updater = new IPBMFZ_Block_Updater();
     $this->zip_handler = new IPBMFZ_ZIP_Handler();
-    $this->pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+
+    try {
+      $this->pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+    } catch (Exception $e) {
+      throw new Exception('Failed to initialize synced pattern handler: ' . $e->getMessage());
+    }
   }
 
   /**

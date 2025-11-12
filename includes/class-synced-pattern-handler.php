@@ -21,10 +21,20 @@ class IPBMFZ_Synced_Pattern_Handler
 
   /**
    * Constructor
+   *
+   * @param IPBMFZ_Block_Updater|null $block_updater Block updater instance (optional)
+   * @throws Exception If IPBMFZ_Block_Updater class is not available
    */
-  public function __construct()
+  public function __construct($block_updater = null)
   {
-    $this->block_updater = new IPBMFZ_Block_Updater();
+    if ($block_updater !== null) {
+      $this->block_updater = $block_updater;
+    } else {
+      if (!class_exists('IPBMFZ_Block_Updater')) {
+        throw new Exception('IPBMFZ_Block_Updater class not found. Please ensure the block updater is properly loaded.');
+      }
+      $this->block_updater = new IPBMFZ_Block_Updater();
+    }
   }
 
   /**
