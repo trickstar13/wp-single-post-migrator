@@ -2,6 +2,24 @@
 
 WordPress記事を画像ファイルと共にZIP形式で完全にエクスポート・インポートできる包括的な移行ツール。
 
+## インストール
+
+### ZIPファイルの作成
+
+WordPressにアップロードするためのZIPファイルを作成するには、以下のコマンドを実行してください。
+
+```bash
+zip -r wp-single-post-migrator.zip . \
+  -x "*.git*" \
+  -x "*.DS_Store" \
+  -x "CLAUDE.md" \
+  -x "concept.md" \
+  -x "node_modules/*"
+```
+
+このコマンドは、プラグインの必要なファイルのみを含むZIPファイルを作成します。作成された `wp-single-post-migrator.zip` をWordPress管理画面からアップロードできます。
+
+
 ## 主な機能
 
 ### 🚀 エクスポート機能
@@ -64,7 +82,7 @@ WordPress記事を画像ファイルと共にZIP形式で完全にエクスポ�
 - JSON形式の画像データ
 - ネストしたデータ構造
 
-## インストール
+### プラグインのインストール
 
 1. プラグインファイルを `/wp-content/plugins/wp-single-post-migrator/` ディレクトリにアップロード
 2. WordPress管理画面でプラグインを有効化
