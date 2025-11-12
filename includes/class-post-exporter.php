@@ -595,19 +595,39 @@ class IPBMFZ_Post_Exporter
     $images = array();
 
     if (empty($block['attrs'])) {
+      error_log("Import Media from ZIP - DEBUG: LazyBlock has no attrs");
       return $images;
     }
 
-    foreach ($block['attrs'] as $attr_value) {
-      if (is_string($attr_value) && $this->looks_like_json_image_data($attr_value)) {
-        $decoded = urldecode($attr_value);
-        $data = json_decode($decoded, true);
-        if (json_last_error() === JSON_ERROR_NONE) {
-          $found_urls = $this->extract_urls_from_data($data);
-          $images = array_merge($images, $found_urls);
+    error_log("Import Media from ZIP - DEBUG: Processing LazyBlock " . $block['blockName'] . " with " . count($block['attrs']) . " attributes");
+
+    foreach ($block['attrs'] as $attr_name => $attr_value) {
+      if (is_string($attr_value)) {
+        $looks_like_json = $this->looks_like_json_image_data($attr_value);
+        error_log("Import Media from ZIP - DEBUG: Attribute '$attr_name' looks like JSON image data: " . ($looks_like_json ? 'YES' : 'NO'));
+
+        if ($looks_like_json) {
+          $decoded = urldecode($attr_value);
+          $data = json_decode($decoded, true);
+          if (json_last_error() === JSON_ERROR_NONE) {
+            $found_urls = $this->extract_urls_from_data($data);
+            error_log("Import Media from ZIP - DEBUG: Found " . count($found_urls) . " image URLs in attribute '$attr_name'");
+            foreach ($found_urls as $url) {
+              error_log("Import Media from ZIP - DEBUG: - $url");
+            }
+            $images = array_merge($images, $found_urls);
+          } else {
+            error_log("Import Media from ZIP - DEBUG: JSON decode error for attribute '$attr_name': " . json_last_error_msg());
+          }
         }
+      } else {
+        error_log("Import Media from ZIP - DEBUG: Attribute '$attr_name' is not a string (type: " . gettype($attr_value) . ")");
       }
     }
+
+    // Remove duplicates
+    $images = array_unique($images);
+    error_log("Import Media from ZIP - DEBUG: Total unique images from LazyBlock: " . count($images));
 
     return $images;
   }
@@ -696,8 +716,8 @@ class IPBMFZ_Post_Exporter
       return $urls;
     }
 
-    // Extract URLs from src attributes
-    if (preg_match_all('/src=["\']([^"\']+)["\']/', $html, $matches)) {
+    // Extract URLs from src attributes (handle both normal and escaped quotes)
+    if (preg_match_all('/src=\\\\?["\']([^"\'\\\\]+)\\\\?["\']/', $html, $matches)) {
       foreach ($matches[1] as $url) {
         if ($this->is_image_url($url)) {
           $urls[] = $url;
@@ -705,10 +725,27 @@ class IPBMFZ_Post_Exporter
       }
     }
 
-    // Extract URLs from href attributes
-    if (preg_match_all('/href=["\']([^"\']+)["\']/', $html, $matches)) {
+    // Extract URLs from href attributes (handle both normal and escaped quotes)
+    if (preg_match_all('/href=\\\\?["\']([^"\'\\\\]+)\\\\?["\']/', $html, $matches)) {
       foreach ($matches[1] as $url) {
         if ($this->is_image_url($url)) {
+          $urls[] = $url;
+        }
+      }
+    }
+
+    // Also try with the original regex for standard HTML
+    if (preg_match_all('/src=["\']([^"\']+)["\']/', $html, $matches)) {
+      foreach ($matches[1] as $url) {
+        if ($this->is_image_url($url) && !in_array($url, $urls)) {
+          $urls[] = $url;
+        }
+      }
+    }
+
+    if (preg_match_all('/href=["\']([^"\']+)["\']/', $html, $matches)) {
+      foreach ($matches[1] as $url) {
+        if ($this->is_image_url($url) && !in_array($url, $urls)) {
           $urls[] = $url;
         }
       }
@@ -717,7 +754,7 @@ class IPBMFZ_Post_Exporter
     // Extract direct URLs from text
     if (preg_match_all('/(https?:\/\/[^\s<>"\']+\.(?:jpg|jpeg|png|gif|webp|svg))/i', $html, $matches)) {
       foreach ($matches[1] as $url) {
-        if ($this->is_image_url($url)) {
+        if ($this->is_image_url($url) && !in_array($url, $urls)) {
           $urls[] = $url;
         }
       }
@@ -751,6 +788,11 @@ class IPBMFZ_Post_Exporter
         elseif (is_string($value) && $this->is_image_url($value)) {
           $urls[] = $value;
         }
+        // Check for HTML content that contains images
+        elseif (is_string($value) && (strpos($value, '<img') !== false || strpos($value, 'wp-content/uploads') !== false)) {
+          $html_urls = $this->extract_urls_from_html($value);
+          $urls = array_merge($urls, $html_urls);
+        }
       }
     }
     // Handle objects as well
@@ -763,6 +805,9 @@ class IPBMFZ_Post_Exporter
           $urls = array_merge($urls, $nested_urls);
         } elseif (is_string($value) && $this->is_image_url($value)) {
           $urls[] = $value;
+        } elseif (is_string($value) && (strpos($value, '<img') !== false || strpos($value, 'wp-content/uploads') !== false)) {
+          $html_urls = $this->extract_urls_from_html($value);
+          $urls = array_merge($urls, $html_urls);
         }
       }
     }
@@ -785,15 +830,51 @@ class IPBMFZ_Post_Exporter
     $decoded = urldecode($value);
     $data = json_decode($decoded, true);
 
-    if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+    if (json_last_error() !== JSON_ERROR_NONE || (!is_array($data) && !is_object($data))) {
       return false;
     }
 
-    // Check for image-related keys
-    $image_keys = array('id', 'url', 'alt', 'title', 'sizes');
-    foreach ($image_keys as $key) {
-      if (isset($data[$key])) {
-        return true;
+    // Check if data contains any image URLs recursively
+    if ($this->contains_image_urls_recursive($data)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if data contains image URLs recursively
+   *
+   * @param mixed $data Data to check
+   * @return bool
+   */
+  private function contains_image_urls_recursive($data)
+  {
+    if (is_string($data)) {
+      return $this->is_image_url($data);
+    }
+
+    if (is_array($data) || is_object($data)) {
+      foreach ($data as $key => $value) {
+        // Check for direct image URL keys
+        if (($key === 'url' || $key === 'src') && is_string($value) && $this->is_image_url($value)) {
+          return true;
+        }
+
+        // Check if value itself is an image URL
+        if (is_string($value) && $this->is_image_url($value)) {
+          return true;
+        }
+
+        // Recursively check nested data
+        if ((is_array($value) || is_object($value)) && $this->contains_image_urls_recursive($value)) {
+          return true;
+        }
+
+        // Check for HTML content that might contain images
+        if (is_string($value) && (strpos($value, '<img') !== false || strpos($value, 'wp-content/uploads') !== false)) {
+          return true;
+        }
       }
     }
 
