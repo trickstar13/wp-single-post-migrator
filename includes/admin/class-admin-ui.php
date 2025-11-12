@@ -71,7 +71,6 @@ class IPBMFZ_Admin_UI
       <!-- Export Section -->
       <div id="export-section" class="function-section">
         <h4><?php _e('エクスポート', 'wp-single-post-migrator'); ?></h4>
-        <p><?php _e('この記事をXMLと画像ファイルを含むZIPファイルとしてエクスポートします。', 'wp-single-post-migrator'); ?></p>
 
         <div class="export-options">
           <label>
@@ -108,7 +107,7 @@ class IPBMFZ_Admin_UI
 
         <div class="import-subsection">
           <h5><?php _e('記事をインポート', 'wp-single-post-migrator'); ?></h5>
-          <p><?php _e('XMLと画像を含むZIPファイルから記事をインポートします（現在の記事を置き換え）。', 'wp-single-post-migrator'); ?></p>
+          <p><?php _e('ZIPファイルから記事をインポートします（現在の記事を置き換え）。', 'wp-single-post-migrator'); ?></p>
 
           <div class="import-options">
             <label>
@@ -167,24 +166,22 @@ class IPBMFZ_Admin_UI
       <!-- Synced Patterns Section -->
       <div id="synced-patterns-section" class="function-section">
         <h4><?php _e('同期パターン管理', 'wp-single-post-migrator'); ?></h4>
-        <p><?php _e('サイト全体の同期パターン（Synced Patterns）をエクスポート/インポートします。', 'wp-single-post-migrator'); ?></p>
 
         <div class="patterns-subsection">
           <h5><?php _e('パターンエクスポート', 'wp-single-post-migrator'); ?></h5>
-          <p><?php _e('サイト内の全同期パターンをJSONファイル付きZIPでエクスポートします。', 'wp-single-post-migrator'); ?></p>
+          <p><?php _e('サイト内の全同期パターンをエクスポートします。', 'wp-single-post-migrator'); ?></p>
           <p>
             <button
               type="button"
               id="export-patterns-button"
               class="button button-secondary">
-              <?php _e('同期パターンをエクスポート', 'wp-single-post-migrator'); ?>
+              <?php _e('エクスポート', 'wp-single-post-migrator'); ?>
             </button>
           </p>
         </div>
 
         <div class="patterns-subsection">
           <h5><?php _e('パターンインポート', 'wp-single-post-migrator'); ?></h5>
-          <p><?php _e('同期パターン付きZIPファイルからパターンをインポートします。', 'wp-single-post-migrator'); ?></p>
 
           <div class="pattern-import-options">
             <label>
@@ -210,7 +207,7 @@ class IPBMFZ_Admin_UI
               id="import-patterns-button"
               class="button button-secondary"
               disabled>
-              <?php _e('同期パターンをインポート', 'wp-single-post-migrator'); ?>
+              <?php _e('インポート', 'wp-single-post-migrator'); ?>
             </button>
           </p>
         </div>
