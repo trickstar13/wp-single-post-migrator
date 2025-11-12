@@ -435,28 +435,36 @@ class IPBMFZ_Block_Updater
       return $updated_count;
     }
 
-    // First, check if this LazyBlock has any images that need updating
-    $has_updatable_images = false;
+    // First, check if this LazyBlock has any content that needs updating
+    $has_updatable_content = false;
     foreach ($block['attrs'] as $attr_name => $attr_value) {
       // Skip null or non-string attributes to prevent WordPress block support errors
       if ($attr_value === null || !is_string($attr_value)) {
         continue;
       }
+
+      // Check for JSON image data
       if ($this->looks_like_json_image_data($attr_value)) {
         $decoded = urldecode($attr_value);
         $data = json_decode($decoded, true);
         if (json_last_error() === JSON_ERROR_NONE) {
           $found_images = $this->find_images_in_data($data, $image_map);
           if (!empty($found_images)) {
-            $has_updatable_images = true;
+            $has_updatable_content = true;
             break;
           }
         }
       }
+
+      // Check for direct URLs that need updating
+      if ($this->is_updatable_url($attr_value) && $this->needs_domain_update($attr_value)) {
+        $has_updatable_content = true;
+        break;
+      }
     }
 
-    // If no images need updating, leave the block completely untouched
-    if (!$has_updatable_images) {
+    // If no content needs updating, leave the block completely untouched
+    if (!$has_updatable_content) {
       return $updated_count;
     }
 
@@ -484,9 +492,45 @@ class IPBMFZ_Block_Updater
           $attr_value = $original_value;
         }
       }
+      // Handle direct URL attributes (like href, link, url, etc.)
+      elseif (is_string($attr_value) && $this->is_updatable_url($attr_value)) {
+        if ($this->needs_domain_update($attr_value)) {
+          $new_url = $this->update_url_domain($attr_value);
+          if ($new_url !== $attr_value) {
+            $attr_value = $new_url;
+            $updated_count++;
+          }
+        }
+      }
     }
 
     return $updated_count;
+  }
+
+  /**
+   * Check if a string is a simple URL that should be updated
+   *
+   * @param string $value String to check
+   * @return bool
+   */
+  private function is_updatable_url($value)
+  {
+    // Must be a valid URL
+    if (!filter_var($value, FILTER_VALIDATE_URL)) {
+      return false;
+    }
+
+    // Should start with http or https
+    if (!preg_match('/^https?:\/\//', $value)) {
+      return false;
+    }
+
+    // Should not be URL-encoded JSON (those are handled separately)
+    if (strpos($value, '%5B') !== false || strpos($value, '%7B') !== false) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -641,31 +685,38 @@ class IPBMFZ_Block_Updater
   }
 
   /**
-   * Update image URLs in HTML content by automatic domain detection
+   * Update URLs in content by automatic domain detection
    *
-   * @param string $html_content HTML content (passed by reference)
+   * @param string $content Content (passed by reference)
    * @param array $image_map Image mapping array (not used, kept for compatibility)
    * @return bool True if any URLs were updated
    */
-  private function update_html_image_urls(&$html_content, $image_map)
+  private function update_html_image_urls(&$content, $image_map)
   {
-    if (!is_string($html_content)) {
+    if (!is_string($content)) {
       return false;
     }
 
     $updated = false;
     $current_site_url = site_url();
 
-    // Use regex to find all URLs that contain wp-content/uploads
-    $pattern = '/https?:\/\/[^\/\s]+\/wp-content\/uploads\/[^"\s<>]+/i';
+    // Find all URLs (both media and page URLs)
+    $patterns = array(
+      // Media URLs with wp-content/uploads
+      '/https?:\/\/[^\/\s"\'<>]+\/wp-content\/uploads\/[^"\s<>\']+/i',
+      // Other site URLs (pages, posts, etc.)
+      '/https?:\/\/[^\/\s"\'<>]+\/[^"\s<>\'"]*(?:\/|\.html?|\.php)?/i'
+    );
 
-    if (preg_match_all($pattern, $html_content, $matches)) {
-      foreach ($matches[0] as $url) {
-        if ($this->needs_domain_update($url)) {
-          $new_url = $this->update_url_domain($url);
-          if ($new_url !== $url) {
-            $html_content = str_replace($url, $new_url, $html_content);
-            $updated = true;
+    foreach ($patterns as $pattern) {
+      if (preg_match_all($pattern, $content, $matches)) {
+        foreach ($matches[0] as $url) {
+          if ($this->needs_domain_update($url)) {
+            $new_url = $this->update_url_domain($url);
+            if ($new_url !== $url) {
+              $content = str_replace($url, $new_url, $content);
+              $updated = true;
+            }
           }
         }
       }
@@ -692,16 +743,20 @@ class IPBMFZ_Block_Updater
       return false;
     }
 
-    // Check if URL contains wp-content/uploads and has a different domain
-    if (strpos($url, '/wp-content/uploads/') !== false) {
-      $parsed_url = parse_url($url);
-      $current_site_url = site_url();
-      $current_domain = parse_url($current_site_url, PHP_URL_HOST);
+    $parsed_url = parse_url($url);
+    $current_site_url = site_url();
+    $current_domain = parse_url($current_site_url, PHP_URL_HOST);
 
-      // If URL domain is different from current domain, it needs updating
-      if (!empty($parsed_url['host']) && $parsed_url['host'] !== $current_domain) {
-        return true;
+    // If URL domain is different from current domain, it needs updating
+    if (!empty($parsed_url['host']) && $parsed_url['host'] !== $current_domain) {
+      // Skip external service URLs (like Google, Facebook, etc.)
+      $external_domains = array('google.com', 'facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'linkedin.com');
+      foreach ($external_domains as $external) {
+        if (strpos($parsed_url['host'], $external) !== false) {
+          return false;
+        }
       }
+      return true;
     }
 
     return false;
@@ -723,26 +778,35 @@ class IPBMFZ_Block_Updater
       return $url;
     }
 
-    // Extract the path starting from /wp-content/
     $path = !empty($parsed_url['path']) ? $parsed_url['path'] : '';
     $wp_content_pos = strpos($path, '/wp-content/');
 
-    if ($wp_content_pos === false) {
-      // If no wp-content found, return original URL
-      return $url;
+    // Handle media URLs (wp-content/uploads)
+    if ($wp_content_pos !== false) {
+      // Get the relative path from wp-content onwards
+      $relative_path = substr($path, $wp_content_pos);
+
+      // Get the base path from current site (e.g., "/blog" if WordPress is in subdirectory)
+      $base_path = !empty($current_parsed['path']) ? rtrim($current_parsed['path'], '/') : '';
+      $full_path = $base_path . $relative_path;
     }
+    // Handle page URLs (not wp-content)
+    else {
+      // For page URLs, replace domain but keep the full path structure
+      $full_path = $path;
 
-    // Get the relative path from wp-content onwards
-    $relative_path = substr($path, $wp_content_pos);
-
-    // Get the base path from current site (e.g., "/blog" if WordPress is in subdirectory)
-    $base_path = !empty($current_parsed['path']) ? rtrim($current_parsed['path'], '/') : '';
+      // If current site is in a subdirectory, we may need to adjust the path
+      $current_base_path = !empty($current_parsed['path']) ? rtrim($current_parsed['path'], '/') : '';
+      if (!empty($current_base_path) && strpos($full_path, $current_base_path) !== 0) {
+        // Only prepend base path if it's not already there
+        $full_path = $current_base_path . $full_path;
+      }
+    }
 
     // Build new URL with current domain
     $scheme = !empty($current_parsed['scheme']) ? $current_parsed['scheme'] : 'https';
     $host = !empty($current_parsed['host']) ? $current_parsed['host'] : '';
     $port = !empty($current_parsed['port']) ? ':' . $current_parsed['port'] : '';
-    $full_path = $base_path . $relative_path;
     $query = !empty($parsed_url['query']) ? '?' . $parsed_url['query'] : '';
     $fragment = !empty($parsed_url['fragment']) ? '#' . $parsed_url['fragment'] : '';
 
