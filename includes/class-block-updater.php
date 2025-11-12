@@ -203,12 +203,23 @@ class IPBMFZ_Block_Updater
     // Preserve original block structure and only update necessary attributes
     $original_attrs = isset($block['attrs']) ? $block['attrs'] : array();
 
+    // Extract custom link href from original innerHTML if linkDestination is custom
+    $custom_href = null;
+    if (isset($original_attrs['linkDestination']) && $original_attrs['linkDestination'] === 'custom') {
+      $custom_href = $this->extract_custom_link_href($block);
+    }
+
     // Keep original attributes that don't conflict
     $preserved_attrs = array();
     foreach ($original_attrs as $key => $value) {
       if (!in_array($key, array('id', 'url', 'width', 'height'))) {
         $preserved_attrs[$key] = $value;
       }
+    }
+
+    // Preserve custom link href if found
+    if ($custom_href) {
+      $preserved_attrs['href'] = $custom_href;
     }
 
     // Set default values if not present
@@ -326,6 +337,26 @@ class IPBMFZ_Block_Updater
   }
 
   /**
+   * Extract custom link href from block innerHTML
+   *
+   * @param array $block Block data
+   * @return string|null Custom link href or null if not found
+   */
+  private function extract_custom_link_href($block)
+  {
+    if (empty($block['innerHTML'])) {
+      return null;
+    }
+
+    // Use regex to extract href from anchor tag
+    if (preg_match('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>/', $block['innerHTML'], $matches)) {
+      return $matches[1];
+    }
+
+    return null;
+  }
+
+  /**
    * Rebuild block in a Gutenberg-compatible way
    *
    * @param array $block Block data (passed by reference)
@@ -362,12 +393,25 @@ class IPBMFZ_Block_Updater
     } elseif ($link_destination === 'attachment') {
       $attachment_page_url = get_attachment_link($attachment_id);
       $img_tag = sprintf('<a href="%s">%s</a>', esc_url($attachment_page_url), $img_tag);
+    } elseif ($link_destination === 'custom' && isset($block['attrs']['href'])) {
+      $custom_url = $block['attrs']['href'];
+      $img_tag = sprintf('<a href="%s">%s</a>', esc_url($custom_url), $img_tag);
     }
+
+    // Build figure classes
+    $figure_classes = array('wp-block-image', 'size-' . $size_slug);
+
+    // Preserve custom CSS classes if they exist
+    if (isset($block['attrs']['className'])) {
+      $figure_classes[] = $block['attrs']['className'];
+    }
+
+    $figure_class_string = implode(' ', $figure_classes);
 
     // Build the complete figure with Gutenberg-style structure
     $block['innerHTML'] = sprintf(
-      '<figure class="wp-block-image size-%s">%s</figure>',
-      esc_attr($size_slug),
+      '<figure class="%s">%s</figure>',
+      esc_attr($figure_class_string),
       $img_tag
     );
 
