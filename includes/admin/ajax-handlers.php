@@ -638,7 +638,7 @@ class IPBMFZ_AJAX_Handlers
 
       // Initialize ZIP handler and extract
       $zip_handler = new IPBMFZ_ZIP_Handler();
-      $extraction_result = $zip_handler->upload_and_extract($file_data, 0);
+      $extraction_result = $zip_handler->upload_and_extract($file_data, 0, false);
 
       if (is_wp_error($extraction_result)) {
         wp_send_json_error(array(

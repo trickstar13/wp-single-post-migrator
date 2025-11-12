@@ -66,7 +66,7 @@ class IPBMFZ_Post_Importer
       $this->log('INFO', 'Starting post import from ZIP');
 
       // Step 1: Extract ZIP file
-      $extraction_result = $this->zip_handler->upload_and_extract($file_data, 0);
+      $extraction_result = $this->zip_handler->upload_and_extract($file_data, 0, false);
       if (is_wp_error($extraction_result)) {
         return $extraction_result;
       }

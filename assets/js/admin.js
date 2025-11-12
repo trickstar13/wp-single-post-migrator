@@ -610,8 +610,8 @@
          * Handle post-operation actions
          */
         handlePostOperationActions: function(data, operationType) {
-            // Ask to reload page for import operations with updated blocks
-            if ((operationType === 'import' || operationType === 'image-import') && data.updated_blocks > 0) {
+            // Ask to reload page for import operations (regardless of updated blocks count)
+            if (operationType === 'import' || operationType === 'image-import') {
                 setTimeout(() => {
                     // Try to refresh the block editor first
                     if (window.wp && window.wp.data && window.wp.data.dispatch) {

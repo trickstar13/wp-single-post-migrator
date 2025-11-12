@@ -23,9 +23,10 @@ class IPBMFZ_ZIP_Handler
    *
    * @param array $file_data $_FILES array data
    * @param int $post_id Post ID for creating unique temp directory
+   * @param bool $require_images Whether images are required (default: true)
    * @return array|WP_Error Array with extract_path and files, or WP_Error on failure
    */
-  public function upload_and_extract($file_data, $post_id)
+  public function upload_and_extract($file_data, $post_id, $require_images = true)
   {
     // Validate file
     $validation = $this->validate_zip_file($file_data);
@@ -58,7 +59,7 @@ class IPBMFZ_ZIP_Handler
     // Get image files
     $image_files = $this->get_image_files($extract_path);
 
-    if (empty($image_files)) {
+    if (empty($image_files) && $require_images) {
       $this->cleanup($extract_path);
       return new WP_Error(
         'no_images_found',
