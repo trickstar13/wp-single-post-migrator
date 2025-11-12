@@ -25,10 +25,10 @@ class IPBMFZ_Block_Updater
     $post = get_post($post_id);
     if (!$post) {
       return new WP_Error(
-        'post_not_found',
         __('記事が見つかりません。', 'wp-single-post-migrator')
       );
     }
+
 
     // Check if post content is actually there
     if (empty($post->post_content)) {
@@ -63,7 +63,6 @@ class IPBMFZ_Block_Updater
     $validation = $this->validate_blocks($blocks);
     if (!$validation['valid']) {
       return new WP_Error(
-        'block_validation_failed',
         __('ブロックの検証に失敗しました: ', 'wp-single-post-migrator') . implode(', ', $validation['errors'])
       );
     }
@@ -84,10 +83,10 @@ class IPBMFZ_Block_Updater
     $test_blocks = parse_blocks($new_content);
     if (empty($test_blocks) && !empty($blocks)) {
       return new WP_Error(
-        'content_serialization_failed',
         __('コンテンツの再構築に失敗しました。', 'wp-single-post-migrator')
       );
     }
+
 
     // Skip wp_update_post completely to prevent newline corruption
     // Use direct database update as primary method
@@ -121,6 +120,83 @@ class IPBMFZ_Block_Updater
 
     if (is_wp_error($update_result)) {
       return $update_result;
+    }
+
+    // Wait a moment for database to settle
+    usleep(100000); // 0.1 second
+
+    // Force reload from database (bypass all caches)
+    global $wpdb;
+    $fresh_content = $wpdb->get_var($wpdb->prepare(
+      "SELECT post_content FROM $wpdb->posts WHERE ID = %d",
+      $post_id
+    ));
+
+    // Parse fresh content
+    $saved_blocks = parse_blocks($fresh_content);
+
+    // Detailed verification
+    $verification_failed = false;
+    $updated_ids = array_values($image_map);
+
+    foreach ($saved_blocks as $i => $saved_block) {
+      if ($saved_block['blockName'] === 'core/image' && isset($saved_block['attrs']['id'])) {
+        $saved_id = $saved_block['attrs']['id'];
+        $saved_url = isset($saved_block['attrs']['url']) ? $saved_block['attrs']['url'] : '';
+
+
+        // Check if this block should have been updated
+        if (in_array($saved_id, $updated_ids)) {
+          if (
+            strpos($saved_block['innerHTML'], 'wp-image-' . $saved_id) === false ||
+            strpos($saved_block['innerHTML'], $saved_url) === false
+          ) {
+            $verification_failed = true;
+              $saved_id,
+              $saved_url,
+              $saved_id,
+              $saved_block['innerHTML']
+            ));
+          } else {
+              $saved_id
+            ));
+          }
+        }
+      }
+    }
+
+    if ($verification_failed) {
+
+      // Try one more time with even more aggressive approach
+      $final_result = $wpdb->update(
+        $wpdb->posts,
+        array('post_content' => $new_content),
+        array('ID' => $post_id),
+        array('%s'),
+        array('%d')
+      );
+
+      if ($final_result !== false) {
+      }
+    } else {
+      // Log final content verification with detailed LazyBlocks attribute check
+      if ($new_content === null) {
+        $content_length = 0;
+        $content_preview = '';
+        $lazyblock_count = 0;
+        $product_list_count = 0;
+      } else {
+        $content_length = strlen($new_content);
+        $content_preview = substr($new_content, 0, 500);
+        $lazyblock_count = substr_count($new_content, 'lazyblock');
+        $product_list_count = substr_count($new_content, 'product-list-items');
+      }
+
+
+      $final_blocks = parse_blocks($new_content);
+      $final_lazy_count = 0;
+      $this->check_final_lazyblocks($final_blocks, $final_lazy_count);
+
     }
 
     // Add validation warnings to results
@@ -225,6 +301,8 @@ class IPBMFZ_Block_Updater
       'url' => $attachment_url
     ));
 
+    // Don't add width/height to avoid unwanted style attributes
+
     // Only rebuild innerHTML for core image blocks, not custom blocks
     $this->rebuild_gutenberg_compatible_block($block, $attachment_id, $attachment_url);
 
@@ -233,8 +311,20 @@ class IPBMFZ_Block_Updater
       strpos($block['innerHTML'], $attachment_url) === false ||
       strpos($block['innerHTML'], 'wp-image-' . $attachment_id) === false
     ) {
+        $attachment_id,
+        $attachment_url,
+        $block['innerHTML']
+      ));
       return false;
     }
+
+    // Debug: Log the updated block structure
+      $filename,
+      $attachment_id,
+      $attachment_url,
+      json_encode($block['attrs']),
+      $block['innerHTML']
+    ));
 
     $results['processed_images'][] = $filename;
     return true;
@@ -326,6 +416,147 @@ class IPBMFZ_Block_Updater
   }
 
   /**
+   * Update image block innerHTML
+   *
+   * @param array $block Block data (passed by reference)
+   * @param int $attachment_id Attachment ID
+   * @param string $attachment_url Attachment URL
+   */
+  private function update_image_inner_html(&$block, $attachment_id, $attachment_url)
+  {
+    // Get the size slug for CSS class
+    $size_slug = isset($block['attrs']['sizeSlug']) ? $block['attrs']['sizeSlug'] : 'full';
+
+    // Debug: Log original innerHTML
+      $attachment_id,
+      $block['innerHTML']
+    ));
+
+    if (empty($block['innerHTML'])) {
+      // If innerHTML is empty, reconstruct it completely
+      $block['innerHTML'] = sprintf(
+        esc_attr($size_slug),
+        esc_url($attachment_url),
+        $attachment_id
+      );
+      return;
+    }
+
+    $html = $block['innerHTML'];
+
+    // Debug: Log the URL we're trying to update to
+      $attachment_url,
+      $attachment_id
+    ));
+
+    // Step 1: Update src attribute - be more specific to target only img src
+    $original_html = $html;
+    $html = preg_replace('/(<img[^>]*?)src="[^"]*"/', '$1src="' . esc_url($attachment_url) . '"', $html);
+
+    // Debug: Check if src was actually updated
+    if ($html === $original_html) {
+        $attachment_id,
+        $original_html
+      ));
+    } else {
+        $attachment_id
+      ));
+    }
+
+    // Step 2: Update wp-image class more carefully
+    if (preg_match('/(<img[^>]*?)class="([^"]*)"/', $html, $matches)) {
+      $img_tag_start = $matches[1];
+      $current_classes = $matches[2];
+
+      // Remove ALL existing wp-image classes
+      $classes = preg_replace('/\bwp-image-\d+\b/', '', $current_classes);
+
+      // Clean up multiple spaces
+      $classes = preg_replace('/\s+/', ' ', trim($classes));
+
+      // Add the new wp-image class
+      $new_classes = trim($classes . ' wp-image-' . $attachment_id);
+
+      // Replace the class attribute
+      $html = preg_replace(
+        '$1class="' . esc_attr($new_classes) . '"',
+        $html
+      );
+    } else {
+      // Add class attribute if it doesn't exist on img tag
+      $html = preg_replace(
+        '$1 class="wp-image-' . $attachment_id . '"$2',
+        $html
+      );
+    }
+
+    // Step 3: Update figure class if needed
+    if (preg_match('/<figure[^>]*class="([^"]*)"/', $html, $matches)) {
+      $figure_classes = $matches[1];
+
+      // Update size class in figure
+      $figure_classes = preg_replace('/\bsize-\w+\b/', 'size-' . $size_slug, $figure_classes);
+
+      $html = preg_replace(
+        '<figure$1class="' . esc_attr($figure_classes) . '"',
+        $html
+      );
+    }
+
+    $block['innerHTML'] = $html;
+  }
+
+  /**
+   * Rebuild image block content completely for consistency
+   *
+   * @param array $block Block data (passed by reference)
+   * @param int $attachment_id Attachment ID
+   * @param string $attachment_url Attachment URL
+   */
+  private function rebuild_image_block_content(&$block, $attachment_id, $attachment_url)
+  {
+    // Get block attributes
+    $size_slug = isset($block['attrs']['sizeSlug']) ? $block['attrs']['sizeSlug'] : 'full';
+    $link_destination = isset($block['attrs']['linkDestination']) ? $block['attrs']['linkDestination'] : 'none';
+
+    // Get attachment data
+    $attachment = get_post($attachment_id);
+    $alt_text = get_post_meta($attachment_id, '_wp_attachment_image_alt', true);
+
+    // Build img tag
+    $img_tag = sprintf(
+      esc_url($attachment_url),
+      esc_attr($alt_text),
+      $attachment_id
+    );
+
+    // Wrap in link if needed
+    if ($link_destination === 'media') {
+      $img_tag = sprintf(
+        esc_url($attachment_url),
+        $img_tag
+      );
+    } elseif ($link_destination === 'attachment') {
+      $attachment_page_url = get_attachment_link($attachment_id);
+      $img_tag = sprintf(
+        esc_url($attachment_page_url),
+        $img_tag
+      );
+    }
+
+    // Build complete figure
+    $block['innerHTML'] = sprintf(
+      esc_attr($size_slug),
+      $img_tag
+    );
+
+    // Log the rebuilt content
+      $attachment_id,
+      $block['innerHTML']
+    ));
+  }
+
+  /**
    * Rebuild block in a Gutenberg-compatible way
    *
    * @param array $block Block data (passed by reference)
@@ -348,6 +579,9 @@ class IPBMFZ_Block_Updater
       'class' => 'wp-image-' . $attachment_id
     );
 
+    // Don't add width/height attributes to img tag
+    // This prevents unwanted inline styles
+
     // Build img tag
     $img_attrs_string = '';
     foreach ($img_attributes as $attr => $value) {
@@ -366,13 +600,17 @@ class IPBMFZ_Block_Updater
 
     // Build the complete figure with Gutenberg-style structure
     $block['innerHTML'] = sprintf(
-      '<figure class="wp-block-image size-%s">%s</figure>',
       esc_attr($size_slug),
       $img_tag
     );
 
     // Update innerContent to match innerHTML (Gutenberg requirement)
     $block['innerContent'] = array($block['innerHTML']);
+
+    // Log the Gutenberg-compatible rebuild
+      $attachment_id,
+      $block['innerHTML']
+    ));
   }
 
   /**
@@ -391,6 +629,10 @@ class IPBMFZ_Block_Updater
       return $updated_count;
     }
 
+      $block['blockName'],
+      count($block['attrs'])
+    ));
+
     // First, check if this LazyBlock has any images that need updating
     $has_updatable_images = false;
     foreach ($block['attrs'] as $attr_name => $attr_value) {
@@ -399,6 +641,7 @@ class IPBMFZ_Block_Updater
         continue;
       }
       if ($this->looks_like_json_image_data($attr_value)) {
+
         $decoded = urldecode($attr_value);
         $data = json_decode($decoded, true);
         if (json_last_error() === JSON_ERROR_NONE) {
@@ -406,13 +649,17 @@ class IPBMFZ_Block_Updater
           if (!empty($found_images)) {
             $has_updatable_images = true;
             break;
+          } else {
           }
+        } else {
         }
       }
     }
 
     // If no images need updating, leave the block completely untouched
     if (!$has_updatable_images) {
+        $block['blockName']
+      ));
       return $updated_count;
     }
 
@@ -422,22 +669,38 @@ class IPBMFZ_Block_Updater
       if ($attr_value === null || !is_string($attr_value)) {
         continue;
       }
+      // Debug: log the raw attribute value for problematic blocks
+      if ($attr_name === 'title' || $attr_name === 'image') {
+          $attr_name,
+          gettype($attr_value),
+          substr(is_string($attr_value) ? $attr_value : json_encode($attr_value), 0, 200) . '...'
+        ));
+      }
 
       // Handle simple string attributes like 'title' that might contain newlines
       if ($attr_name === 'title' && is_string($attr_value)) {
         // Just preserve the title as-is (no changes needed for simple string)
+          $attr_value
+        ));
         continue;
       }
 
       if (is_string($attr_value) && $this->looks_like_json_image_data($attr_value)) {
+          $attr_name
+        ));
+
         // Store original value in case update fails
         $original_value = $attr_value;
 
         if ($this->update_lazyblock_image_attribute($attr_value, $image_map, $results)) {
           $updated_count++;
+            $attr_name
+          ));
         } else {
           // If update failed, restore original value to prevent data loss
           $attr_value = $original_value;
+            $attr_name
+          ));
         }
       }
     }
@@ -520,8 +783,16 @@ class IPBMFZ_Block_Updater
     $image_data = json_decode($original_decoded, true, 512, JSON_BIGINT_AS_STRING);
 
     if (json_last_error() !== JSON_ERROR_NONE || !is_array($image_data)) {
+        substr($original_decoded, 0, 100),
+        json_last_error_msg()
+      ));
       return false;
     }
+
+    // Debug: log the parsed JSON data to see the original title
+      isset($image_data['title']) ? $image_data['title'] : 'N/A',
+      isset($image_data['url']) ? $image_data['url'] : 'N/A'
+    ));
 
     $updated = false;
 
@@ -547,10 +818,16 @@ class IPBMFZ_Block_Updater
 
       // Double-check that critical data is preserved
       if (isset($image_data['title']) && (!isset($validation_data['title']) || $validation_data['title'] !== $image_data['title'])) {
+          $image_data['title'],
+          isset($validation_data['title']) ? $validation_data['title'] : 'MISSING'
+        ));
         return false;
       }
 
       $attr_value = urlencode($new_json);
+
+        isset($image_data['title']) ? $image_data['title'] : 'N/A'
+      ));
     }
 
     return $updated;
@@ -614,13 +891,10 @@ class IPBMFZ_Block_Updater
 
     // Define old domains to replace (add more as needed)
     $old_domains = [
-      'https://stg-renewal.shabu-yuzuan.jp',
-      'http://stg-renewal.shabu-yuzuan.jp',
-      'https://shabu-yuzuan.jp',
-      'http://shabu-yuzuan.jp'
     ];
 
     $updated = false;
+    $original_content = $html_content;
 
     foreach ($old_domains as $old_domain) {
       if (strpos($html_content, $old_domain) !== false) {
@@ -628,6 +902,9 @@ class IPBMFZ_Block_Updater
         $html_content = str_replace($old_domain, $new_domain, $html_content);
         $updated = true;
       }
+    }
+
+    if ($updated) {
     }
 
     return $updated;
@@ -698,6 +975,7 @@ class IPBMFZ_Block_Updater
       $clean_filename = preg_replace('/-\d+x\d+(\.[^.]+)$/', '$1', $filename);
       if ($this->find_matching_attachment($clean_filename, $image_map)) {
         $found_images[] = $data['url'];
+      } else {
       }
     }
 
@@ -914,6 +1192,7 @@ class IPBMFZ_Block_Updater
     return $validation;
   }
 
+
   /**
    * Disable WordPress interference (autosave, revisions, etc.)
    */
@@ -935,6 +1214,7 @@ class IPBMFZ_Block_Updater
       $settings['interval'] = 60; // Increase interval
       return $settings;
     });
+
   }
 
   /**
@@ -947,6 +1227,7 @@ class IPBMFZ_Block_Updater
 
     // Restore autosave
     add_action('admin_init', 'wp_auto_save_post_revisioned');
+
   }
 
   /**
@@ -968,6 +1249,76 @@ class IPBMFZ_Block_Updater
 
     // Force WordPress to reload from database
     wp_cache_flush();
+
+  }
+
+
+  /**
+   * Protect newlines in block attributes before serialization
+   *
+   * @param array $blocks Blocks array (passed by reference)
+   */
+  private function protect_newlines_in_blocks(&$blocks)
+  {
+    foreach ($blocks as &$block) {
+      if (isset($block['attrs']) && is_array($block['attrs'])) {
+        foreach ($block['attrs'] as $attr_name => &$attr_value) {
+          // Skip null attributes to prevent WordPress block support errors
+          if ($attr_value === null) {
+            continue;
+          }
+          if (is_string($attr_value)) {
+            // Check for direct newlines (non-JSON attributes)
+            if (strpos($attr_value, "\n") !== false && strpos($attr_value, '%') === false) {
+              $attr_value = str_replace("\n", '___NEWLINE_PLACEHOLDER___', $attr_value);
+            }
+
+            // Handle URL-encoded JSON attributes more carefully
+            if (strpos($attr_value, '%') !== false && $this->looks_like_json_image_data($attr_value)) {
+              $decoded = urldecode($attr_value);
+              if ($decoded !== $attr_value && strpos($decoded, "\n") !== false) {
+
+                // Try to parse as JSON to verify structure
+                $json_data = json_decode($decoded, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($json_data)) {
+                  // Only protect newlines in string values within the JSON
+                  $this->protect_newlines_in_json_data($json_data);
+
+                  // Re-encode with the same flags as before
+                  $new_json = json_encode($json_data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                  $attr_value = urlencode($new_json);
+
+                } else {
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Recursively protect inner blocks
+      if (!empty($block['innerBlocks'])) {
+        $this->protect_newlines_in_blocks($block['innerBlocks']);
+      }
+    }
+  }
+
+  /**
+   * Protect newlines in JSON data recursively
+   *
+   * @param array $data JSON data (passed by reference)
+   */
+  private function protect_newlines_in_json_data(&$data)
+  {
+    if (is_array($data)) {
+      foreach ($data as &$value) {
+        if (is_string($value) && strpos($value, "\n") !== false) {
+          $value = str_replace("\n", '___NEWLINE_PLACEHOLDER___', $value);
+        } elseif (is_array($value)) {
+          $this->protect_newlines_in_json_data($value);
+        }
+      }
+    }
   }
 
   /**
@@ -997,6 +1348,7 @@ class IPBMFZ_Block_Updater
     );
 
     $fixed_content = $content;
+    $changes_made = false;
 
     foreach ($patterns as $pattern => $replacement) {
       if (is_callable($replacement)) {
@@ -1006,8 +1358,12 @@ class IPBMFZ_Block_Updater
       }
 
       if ($new_content !== $fixed_content) {
+        $changes_made = true;
         $fixed_content = $new_content;
       }
+    }
+
+    if ($changes_made) {
     }
 
     return $fixed_content;
@@ -1031,6 +1387,7 @@ class IPBMFZ_Block_Updater
       return $updated_count;
     }
 
+
     // Process each meta field
     foreach ($all_meta as $meta_key => $meta_values) {
       // Skip WordPress internal fields and ACF field references
@@ -1040,6 +1397,7 @@ class IPBMFZ_Block_Updater
 
       foreach ($meta_values as $meta_value) {
         if (is_string($meta_value) && $this->looks_like_json_image_data($meta_value)) {
+
           // Store original value in case update fails
           $original_value = $meta_value;
 
@@ -1047,9 +1405,13 @@ class IPBMFZ_Block_Updater
             // Update the meta field with new value
             update_post_meta($post_id, $meta_key, $meta_value);
             $updated_count++;
+          } else {
           }
         }
       }
+    }
+
+    if ($updated_count > 0) {
     }
 
     return $updated_count;
@@ -1103,7 +1465,9 @@ class IPBMFZ_Block_Updater
             $meta_value = $new_json;
           }
           return true;
+        } else {
         }
+      } else {
       }
     }
 
@@ -1133,6 +1497,11 @@ class IPBMFZ_Block_Updater
       $new_url = wp_get_attachment_url($matched_attachment_id);
 
       if ($new_url) {
+          $filename,
+          $matched_attachment_id,
+          $new_url
+        ));
+
         // Update image data
         $image_data['id'] = $matched_attachment_id;
         $image_data['url'] = $new_url;
@@ -1188,8 +1557,12 @@ class IPBMFZ_Block_Updater
       return $matches[0];
     }, $content);
 
+
     return $content;
   }
+
+
+
 
   /**
    * Remove null values from block attributes to prevent WordPress core errors

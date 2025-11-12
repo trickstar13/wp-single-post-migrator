@@ -2156,8 +2156,11 @@ class IPBMFZ_Synced_Pattern_Handler
     // This is especially common with Japanese text and complex HTML
     $original_content = $content;
 
-    // Fix escaped newlines that get corrupted
-    $content = str_replace('\\n', "\n", $content);
+    // IMPORTANT: Skip newline conversion for LazyBlocks to prevent content corruption
+    // LazyBlocks use \\n in JSON attributes which should not be converted to actual newlines
+    // NOTE: Commented out - this breaks LazyBlocks by converting \n to actual newlines
+    // serialize_blocks() already handles newlines correctly
+    // $content = str_replace('\\n', "\n", $content);
 
     // Fix double-escaped quotes
     $content = str_replace('\"', '"', $content);
@@ -2174,7 +2177,7 @@ class IPBMFZ_Synced_Pattern_Handler
     }, $content);
 
     if ($content !== $original_content) {
-      $this->log('INFO', 'Fixed serialization corruption in pattern content');
+      $this->log('INFO', 'Fixed serialization corruption in pattern content (LazyBlocks protected)');
     }
 
     return $content;

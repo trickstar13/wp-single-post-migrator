@@ -134,12 +134,6 @@ class IPBMFZ_Post_Importer
               // Merge content-based mapping with existing mapping, prioritizing content-based
               // Use + operator to preserve numeric keys (array_merge reindexes numeric keys!)
               $pattern_reference_map = $content_pattern_mapping + $pattern_reference_map;
-              $this->log('INFO', sprintf('Merged content-based mapping: now have %d total mappings', count($pattern_reference_map)));
-
-              // Debug: Log the new mappings that were added
-              foreach ($content_pattern_mapping as $old_id => $new_id) {
-                $this->log('INFO', sprintf('Content-based mapping added: %d -> %d', $old_id, $new_id));
-              }
 
             }
           } else {
@@ -390,18 +384,16 @@ class IPBMFZ_Post_Importer
     $sanitized_data = $this->sanitize_post_data($post_data);
 
     if ($options['import_mode'] === 'update_existing' && !empty($options['target_post_id'])) {
-      // Update existing post
-      $sanitized_data['ID'] = $options['target_post_id'];
-      $post_id = wp_update_post($sanitized_data);
+      // Update existing post using direct database update
+      $post_id = $this->direct_post_update($options['target_post_id'], $sanitized_data);
       $is_new = false;
     } elseif ($options['import_mode'] === 'replace_current' && !empty($options['target_post_id'])) {
-      // Replace current post content
-      $sanitized_data['ID'] = $options['target_post_id'];
-      $post_id = wp_update_post($sanitized_data);
+      // Replace current post content using direct database update
+      $post_id = $this->direct_post_update($options['target_post_id'], $sanitized_data);
       $is_new = false;
     } else {
-      // Create new post
-      $post_id = wp_insert_post($sanitized_data);
+      // Create new post using direct database insert
+      $post_id = $this->direct_post_insert($sanitized_data);
       $is_new = true;
     }
 
@@ -506,7 +498,10 @@ class IPBMFZ_Post_Importer
 
     // Required fields
     $sanitized['post_title'] = sanitize_text_field($post_data['post_title'] ?? '');
-    $sanitized['post_content'] = wp_kses_post($post_data['post_content'] ?? '');
+
+    // Skip wp_kses_post() to prevent LazyBlocks newline corruption
+    // Use minimal sanitization instead
+    $sanitized['post_content'] = $this->minimal_content_sanitization($post_data['post_content'] ?? '');
 
     // Optional fields
     if (!empty($post_data['post_excerpt'])) {
@@ -909,10 +904,7 @@ class IPBMFZ_Post_Importer
     $updated_content = $this->pattern_handler->update_pattern_references($post->post_content, $pattern_reference_map);
 
     if ($updated_content !== $post->post_content) {
-      $update_result = wp_update_post(array(
-        'ID' => $post_id,
-        'post_content' => $updated_content
-      ));
+      $update_result = $this->direct_content_update($post_id, $updated_content);
 
       if (!is_wp_error($update_result) && $update_result) {
         $this->log('INFO', sprintf('Pattern references updated successfully in post %d', $post_id));
@@ -991,8 +983,6 @@ class IPBMFZ_Post_Importer
     if (preg_match_all('/<!-- wp:block[^>]*"ref":(\d+)/', $post->post_content, $matches)) {
       $referenced_ids = array_unique($matches[1]);
 
-      $this->log('INFO', sprintf('Found %d unique pattern references in post content: %s', count($referenced_ids), implode(', ', $referenced_ids)));
-
       // Try to map each referenced ID to an existing pattern using title matching
       foreach ($referenced_ids as $old_ref_id) {
         $old_ref_id = (int)$old_ref_id;
@@ -1065,9 +1055,6 @@ class IPBMFZ_Post_Importer
     // Find all block references in the content
     if (preg_match_all('/<!-- wp:block[^>]*"ref":(\d+)/', $post->post_content, $matches)) {
       $referenced_ids = array_unique($matches[1]);
-
-      $this->log('INFO', sprintf('Found %d unique pattern references in post content: %s', count($referenced_ids), implode(', ', $referenced_ids)));
-
 
       // Try to map each referenced ID to an existing pattern
       foreach ($referenced_ids as $old_ref_id) {
@@ -1227,5 +1214,170 @@ class IPBMFZ_Post_Importer
     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
       error_log(sprintf('[%s] Import Media from ZIP - %s: %s', current_time('Y-m-d H:i:s'), $level, $message));
     }
+  }
+
+
+  /**
+   * Minimal content sanitization that preserves LazyBlocks newlines
+   * This replaces wp_kses_post() which corrupts newlines in LazyBlocks
+   *
+   * @param string $content Raw content
+   * @return string Minimally sanitized content
+   */
+  private function minimal_content_sanitization($content)
+  {
+    // Only apply basic XSS protection without affecting block structure
+    // Remove potentially dangerous scripts but preserve block HTML
+    $content = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/mi', '', $content);
+    $content = preg_replace('/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/mi', '', $content);
+
+    // Remove dangerous attributes but preserve block attributes
+    $content = preg_replace('/\son\w+\s*=\s*["\'][^"\']*["\']/i', '', $content);
+
+    // Basic HTML entity handling for safety
+    $content = str_replace(array('<script', '</script'), array('&lt;script', '&lt;/script'), $content);
+
+    return $content;
+  }
+
+  /**
+   * Direct database post update to preserve LazyBlocks newlines
+   *
+   * @param int $post_id Post ID
+   * @param array $post_data Post data
+   * @return int|WP_Error Post ID on success, WP_Error on failure
+   */
+  private function direct_post_update($post_id, $post_data)
+  {
+    global $wpdb;
+
+
+
+    $update_data = array();
+    $update_format = array();
+
+    // Map post data to database columns
+    if (isset($post_data['post_content'])) {
+      $update_data['post_content'] = $post_data['post_content'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['post_title'])) {
+      $update_data['post_title'] = $post_data['post_title'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['post_excerpt'])) {
+      $update_data['post_excerpt'] = $post_data['post_excerpt'];
+      $update_format[] = '%s';
+    }
+    if (isset($post_data['post_status'])) {
+      $update_data['post_status'] = $post_data['post_status'];
+      $update_format[] = '%s';
+    }
+
+    $update_data['post_modified'] = current_time('mysql');
+    $update_data['post_modified_gmt'] = current_time('mysql', 1);
+    $update_format[] = '%s';
+    $update_format[] = '%s';
+
+    $result = $wpdb->update(
+      $wpdb->posts,
+      $update_data,
+      array('ID' => $post_id),
+      $update_format,
+      array('%d')
+    );
+
+    if ($result === false) {
+      return new WP_Error('post_update_failed', __('記事の更新に失敗しました。', 'wp-single-post-migrator'));
+    }
+
+    $this->log('INFO', sprintf('Direct database post update successful for post %d', $post_id));
+    return $post_id;
+  }
+
+  /**
+   * Direct database post insert to preserve LazyBlocks newlines
+   *
+   * @param array $post_data Post data
+   * @return int|WP_Error Post ID on success, WP_Error on failure
+   */
+  private function direct_post_insert($post_data)
+  {
+    global $wpdb;
+
+
+    $insert_data = array(
+      'post_author' => get_current_user_id(),
+      'post_date' => current_time('mysql'),
+      'post_date_gmt' => current_time('mysql', 1),
+      'post_modified' => current_time('mysql'),
+      'post_modified_gmt' => current_time('mysql', 1),
+      'post_status' => 'publish',
+      'post_type' => 'post',
+      'comment_status' => 'closed',
+      'ping_status' => 'closed',
+      'post_name' => '',
+      'guid' => ''
+    );
+
+    // Override with provided data
+    if (isset($post_data['post_content'])) {
+      $insert_data['post_content'] = $post_data['post_content'];
+    }
+    if (isset($post_data['post_title'])) {
+      $insert_data['post_title'] = $post_data['post_title'];
+    }
+    if (isset($post_data['post_excerpt'])) {
+      $insert_data['post_excerpt'] = $post_data['post_excerpt'];
+    }
+    if (isset($post_data['post_status'])) {
+      $insert_data['post_status'] = $post_data['post_status'];
+    }
+
+    $result = $wpdb->insert(
+      $wpdb->posts,
+      $insert_data,
+      array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+    );
+
+    if ($result === false) {
+      return new WP_Error('post_insert_failed', __('記事の作成に失敗しました。', 'wp-single-post-migrator'));
+    }
+
+    $post_id = $wpdb->insert_id;
+    $this->log('INFO', sprintf('Direct database post insert successful, new post ID: %d', $post_id));
+    return $post_id;
+  }
+
+  /**
+   * Direct database content update to preserve LazyBlocks newlines
+   *
+   * @param int $post_id Post ID
+   * @param string $content New content
+   * @return int|WP_Error Post ID on success, WP_Error on failure
+   */
+  private function direct_content_update($post_id, $content)
+  {
+    global $wpdb;
+
+
+    $result = $wpdb->update(
+      $wpdb->posts,
+      array(
+        'post_content' => $content,
+        'post_modified' => current_time('mysql'),
+        'post_modified_gmt' => current_time('mysql', 1)
+      ),
+      array('ID' => $post_id),
+      array('%s', '%s', '%s'),
+      array('%d')
+    );
+
+    if ($result === false) {
+      return new WP_Error('content_update_failed', __('コンテンツの更新に失敗しました。', 'wp-single-post-migrator'));
+    }
+
+    $this->log('INFO', sprintf('Direct database content update successful for post %d', $post_id));
+    return $post_id;
   }
 }
