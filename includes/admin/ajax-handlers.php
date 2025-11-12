@@ -506,7 +506,14 @@ class IPBMFZ_AJAX_Handlers
       $this->log('INFO', 'Starting synced patterns export');
 
       // Initialize pattern handler
-      $pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+      try {
+        $pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+      } catch (Exception $e) {
+        wp_send_json_error(array(
+          'message' => __('同期パターンハンドラーの初期化に失敗しました: ', 'wp-single-post-migrator') . $e->getMessage()
+        ));
+        return;
+      }
 
       // Create temporary directory for patterns
       $temp_dir = wp_upload_dir()['basedir'] . '/wp-single-post-migrator-temp-' . time();
@@ -650,7 +657,21 @@ class IPBMFZ_AJAX_Handlers
       $this->log('INFO', sprintf('ZIP extracted to: %s', $extract_path));
 
       // Initialize pattern handler and media importer
-      $pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+      try {
+        $pattern_handler = new IPBMFZ_Synced_Pattern_Handler();
+      } catch (Exception $e) {
+        wp_send_json_error(array(
+          'message' => __('同期パターンハンドラーの初期化に失敗しました: ', 'wp-single-post-migrator') . $e->getMessage()
+        ));
+        return;
+      }
+
+      if (!class_exists('IPBMFZ_Media_Importer')) {
+        wp_send_json_error(array(
+          'message' => __('メディアインポーターが見つかりません。', 'wp-single-post-migrator')
+        ));
+        return;
+      }
       $media_importer = new IPBMFZ_Media_Importer();
 
       // Import pattern images first

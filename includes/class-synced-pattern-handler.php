@@ -12,6 +12,30 @@ if (!defined('ABSPATH')) {
 
 class IPBMFZ_Synced_Pattern_Handler
 {
+  /**
+   * Block updater instance for shared URL domain methods
+   *
+   * @var IPBMFZ_Block_Updater
+   */
+  private $block_updater;
+
+  /**
+   * Constructor
+   *
+   * @param IPBMFZ_Block_Updater|null $block_updater Block updater instance (optional)
+   * @throws Exception If IPBMFZ_Block_Updater class is not available
+   */
+  public function __construct($block_updater = null)
+  {
+    if ($block_updater !== null) {
+      $this->block_updater = $block_updater;
+    } else {
+      if (!class_exists('IPBMFZ_Block_Updater')) {
+        throw new Exception('IPBMFZ_Block_Updater class not found. Please ensure the block updater is properly loaded.');
+      }
+      $this->block_updater = new IPBMFZ_Block_Updater();
+    }
+  }
 
   /**
    * Get all synced patterns from the database
@@ -1428,65 +1452,7 @@ class IPBMFZ_Synced_Pattern_Handler
     return ($clean_url_filename === $clean_filename || $url_filename === $filename);
   }
 
-  /**
-   * Check if a URL needs domain updating
-   *
-   * @param string $url URL to check
-   * @return bool True if URL needs domain update
-   */
-  private function needs_domain_update($url)
-  {
-    // Skip non-URLs and very long strings that are likely JSON
-    if (strlen($url) > 500 || strpos($url, '%5B') !== false || strpos($url, '%7B') !== false) {
-      return false;
-    }
 
-    // Must be a valid URL
-    if (!filter_var($url, FILTER_VALIDATE_URL)) {
-      return false;
-    }
-
-    // Check if URL contains wp-content/uploads and has a different domain
-    if (strpos($url, '/wp-content/uploads/') !== false) {
-      $parsed_url = parse_url($url);
-      $current_site_url = site_url();
-      $current_domain = parse_url($current_site_url, PHP_URL_HOST);
-
-      // If URL domain is different from current domain, it needs updating
-      if (!empty($parsed_url['host']) && $parsed_url['host'] !== $current_domain) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Update URL domain to match current site
-   *
-   * @param string $url URL to update
-   * @return string Updated URL
-   */
-  private function update_url_domain($url)
-  {
-    $parsed_url = parse_url($url);
-    $current_site_url = site_url();
-    $current_parsed = parse_url($current_site_url);
-
-    if (!$parsed_url || !$current_parsed) {
-      return $url;
-    }
-
-    // Build new URL with current domain
-    $scheme = !empty($current_parsed['scheme']) ? $current_parsed['scheme'] : 'https';
-    $host = !empty($current_parsed['host']) ? $current_parsed['host'] : '';
-    $port = !empty($current_parsed['port']) ? ':' . $current_parsed['port'] : '';
-    $path = !empty($parsed_url['path']) ? $parsed_url['path'] : '';
-    $query = !empty($parsed_url['query']) ? '?' . $parsed_url['query'] : '';
-    $fragment = !empty($parsed_url['fragment']) ? '#' . $parsed_url['fragment'] : '';
-
-    return $scheme . '://' . $host . $port . $path . $query . $fragment;
-  }
 
   /**
    * Update all domain URLs in pattern content
@@ -1566,10 +1532,10 @@ class IPBMFZ_Synced_Pattern_Handler
               $this->log('DEBUG', sprintf('Updated domains in URL-encoded JSON attr %s', $key));
             }
           }
-        } elseif ($this->needs_domain_update($value)) {
+        } elseif ($this->block_updater->needs_domain_update($value)) {
           // Handle simple URLs
           $old_value = $value;
-          $value = $this->update_url_domain($value);
+          $value = $this->block_updater->update_url_domain($value);
           if ($value !== $old_value) {
             $this->log('DEBUG', sprintf('Updated domain in attr %s: %s -> %s', $key, substr($old_value, 0, 50), substr($value, 0, 50)));
           }
@@ -1599,9 +1565,9 @@ class IPBMFZ_Synced_Pattern_Handler
           }
         } elseif (is_string($item)) {
           // Handle direct URLs
-          if ($this->needs_domain_update($item)) {
+          if ($this->block_updater->needs_domain_update($item)) {
             $old_item = $item;
-            $item = $this->update_url_domain($item);
+            $item = $this->block_updater->update_url_domain($item);
             if ($item !== $old_item) {
               $this->log('DEBUG', sprintf('Updated domain in JSON key "%s": %s -> %s', $key, substr($old_item, 0, 50), substr($item, 0, 50)));
               $updated = true;
@@ -1780,8 +1746,8 @@ class IPBMFZ_Synced_Pattern_Handler
       function ($matches) {
         $attr = $matches[1];
         $url = $matches[2];
-        if ($this->needs_domain_update($url)) {
-          $new_url = $this->update_url_domain($url);
+        if ($this->block_updater->needs_domain_update($url)) {
+          $new_url = $this->block_updater->update_url_domain($url);
           $this->log('DEBUG', sprintf('Updated domain in HTML %s: %s -> %s', $attr, substr($url, 0, 50), substr($new_url, 0, 50)));
           return $attr . '="' . esc_attr($new_url) . '"';
         }
@@ -1935,9 +1901,9 @@ class IPBMFZ_Synced_Pattern_Handler
             }
           }
           // Check for any URL with the wrong domain that needs updating
-          elseif ($this->needs_domain_update($item)) {
+          elseif ($this->block_updater->needs_domain_update($item)) {
             $old_item = $item;
-            $item = $this->update_url_domain($item);
+            $item = $this->block_updater->update_url_domain($item);
             if ($item !== $old_item) {
               $this->log('DEBUG', sprintf('Updated domain in JSON key "%s": %s -> %s', $key, substr($old_item, 0, 50), substr($item, 0, 50)));
               $updated = true;
@@ -2156,8 +2122,11 @@ class IPBMFZ_Synced_Pattern_Handler
     // This is especially common with Japanese text and complex HTML
     $original_content = $content;
 
-    // Fix escaped newlines that get corrupted
-    $content = str_replace('\\n', "\n", $content);
+    // IMPORTANT: Skip newline conversion for LazyBlocks to prevent content corruption
+    // LazyBlocks use \\n in JSON attributes which should not be converted to actual newlines
+    // NOTE: Commented out - this breaks LazyBlocks by converting \n to actual newlines
+    // serialize_blocks() already handles newlines correctly
+    // $content = str_replace('\\n', "\n", $content);
 
     // Fix double-escaped quotes
     $content = str_replace('\"', '"', $content);
@@ -2174,7 +2143,7 @@ class IPBMFZ_Synced_Pattern_Handler
     }, $content);
 
     if ($content !== $original_content) {
-      $this->log('INFO', 'Fixed serialization corruption in pattern content');
+      $this->log('INFO', 'Fixed serialization corruption in pattern content (LazyBlocks protected)');
     }
 
     return $content;
