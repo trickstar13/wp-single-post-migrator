@@ -223,13 +223,6 @@ class IPBMFZ_Post_Exporter
     $generator->appendChild($xml->createCDATASection('WP Single Post Migrator v' . IPBMFZ_VERSION));
     $channel->appendChild($generator);
 
-    // Export domain information for import URL replacement
-    $export_domains = $this->extract_domains_from_post($post);
-    if (!empty($export_domains)) {
-      $domains_element = $xml->createElement('wp:export_domains');
-      $domains_element->appendChild($xml->createCDATASection(json_encode($export_domains, JSON_UNESCAPED_UNICODE)));
-      $channel->appendChild($domains_element);
-    }
 
     // Post item
     $item = $xml->createElement('item');
@@ -1060,76 +1053,6 @@ class IPBMFZ_Post_Exporter
     return array_unique($pattern_ids);
   }
 
-  /**
-   * Extract domains from post content and meta fields
-   *
-   * @param WP_Post $post Post object
-   * @return array Array of unique domains found
-   */
-  private function extract_domains_from_post($post)
-  {
-    $domains = array();
-    $current_domain = parse_url(home_url(), PHP_URL_HOST);
-
-    // Extract domains from post content
-    $content_domains = $this->extract_domains_from_content($post->post_content);
-    $domains = array_merge($domains, $content_domains);
-
-    // Extract domains from meta fields
-    $meta_fields = get_post_meta($post->ID);
-    foreach ($meta_fields as $meta_key => $meta_values) {
-      // Skip WordPress internal fields
-      if (strpos($meta_key, '_') === 0) {
-        continue;
-      }
-
-      foreach ($meta_values as $meta_value) {
-        if (is_string($meta_value)) {
-          $meta_domains = $this->extract_domains_from_content($meta_value);
-          $domains = array_merge($domains, $meta_domains);
-        }
-      }
-    }
-
-    // Remove current domain and empty values
-    $domains = array_filter(array_unique($domains), function($domain) use ($current_domain) {
-      return !empty($domain) && $domain !== $current_domain;
-    });
-
-    return array_values($domains);
-  }
-
-  /**
-   * Extract domains from content string
-   *
-   * @param string $content Content to analyze
-   * @return array Array of domains found
-   */
-  private function extract_domains_from_content($content)
-  {
-    $domains = array();
-
-    // Pattern to match URLs with domains
-    $url_pattern = '/https?:\/\/([a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,})/i';
-
-    if (preg_match_all($url_pattern, $content, $matches)) {
-      foreach ($matches[1] as $domain) {
-        $domains[] = $domain;
-      }
-    }
-
-    // Also check URL-encoded JSON content (for LazyBlocks)
-    if (strpos($content, '%') !== false) {
-      $decoded_content = urldecode($content);
-      if ($decoded_content !== $content && preg_match_all($url_pattern, $decoded_content, $matches)) {
-        foreach ($matches[1] as $domain) {
-          $domains[] = $domain;
-        }
-      }
-    }
-
-    return array_unique($domains);
-  }
 
   /**
    * Log export activity
