@@ -4,7 +4,7 @@
  * Plugin Name: WP Single Post Migrator
  * Plugin URI: https://github.com/trickstar13/wp-single-post-migrator
  * Description: WordPress記事を画像ファイルと共にZIP形式で完全にエクスポート・インポートできる包括的な移行ツール。
- * Version: 2.4.0
+ * Version: 2.4.1
  * Requires at least: 5.9
  * Requires PHP: 7.4
  * Author: Ayumi Sato
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('IPBMFZ_VERSION', '2.4.0');
+define('IPBMFZ_VERSION', '2.4.1');
 define('IPBMFZ_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('IPBMFZ_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('IPBMFZ_PLUGIN_BASENAME', plugin_basename(__FILE__));
